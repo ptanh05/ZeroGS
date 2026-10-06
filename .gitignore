@@ -1,11 +1,15 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-env/
+*.pyd
+*.obj
+*.exp
+*.lib
+
+# C extensions & builds
 build/
-develop-eggs/
 dist/
 downloads/
 eggs/
@@ -19,10 +23,42 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.pytest_cache/
-.coverage
-htmlcov/
+MANIFEST
+
+# Virtual environments
 .venv/
 venv/
 ENV/
+env/
+.Python
+
+# PyTest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Logs & temporary files
 *.log
+*.tmp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large training checkpoints and heavy datasets
+output/
+runs/
+data/
+*.pth
+*.pt
+*.ply
+*.zip
+*.tar
+*.tar.gz
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
