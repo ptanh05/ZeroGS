@@ -1,0 +1,36 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+  "n_base": 100000,
+  "results": [
+    {
+      "delta_n": 20000,
+      "clone_spike_mb": 80.62,
+      "split_spike_mb": 168.81,
+      "clone_persistent_mb": 36.69,
+      "split_persistent_mb": 48.68,
+      "disparity_ratio": 2.09,
+      "empirical_phi_clone": 4.48,
+      "empirical_phi_split": 9.38
+    },
+    {
+      "delta_n": 50000,
+      "clone_spike_mb": 111.88,
+      "split_spike_mb": 230.97,
+      "clone_persistent_mb": 56.04,
+      "split_persistent_mb": 62.33,
+      "disparity_ratio": 2.06,
+      "empirical_phi_clone": 2.49,
+      "empirical_phi_split": 5.13
+    },
+    {
+      "delta_n": 100000,
+      "clone_spike_mb": 167.18,
+      "split_spike_mb": 353.05,
+      "clone_persistent_mb": 89.84,
+      "split_persistent_mb": 104.3,
+      "disparity_ratio": 2.11,
+      "empirical_phi_clone": 1.86,
+      "empirical_phi_split": 3.92
+    }
+  ]
+}

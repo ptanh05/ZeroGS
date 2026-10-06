@@ -1,0 +1,38 @@
+{
+  "300MB": {
+    "budget_mb": 300.0,
+    "vanilla_oom": true,
+    "vanilla_peak_mb": 346.25,
+    "diet_oom": true,
+    "diet_peak_mb": 303.72,
+    "zerogs_oom": false,
+    "zerogs_peak_mb": 268.0,
+    "zerogs_prune_first_triggers": 1,
+    "zerogs_shrink_triggers": 22,
+    "zerogs_final_pts": 266819
+  },
+  "500MB": {
+    "budget_mb": 500.0,
+    "vanilla_oom": true,
+    "vanilla_peak_mb": 508.3,
+    "diet_oom": true,
+    "diet_peak_mb": 503.65,
+    "zerogs_oom": false,
+    "zerogs_peak_mb": 468.0,
+    "zerogs_prune_first_triggers": 19,
+    "zerogs_shrink_triggers": 0,
+    "zerogs_final_pts": 475234
+  },
+  "800MB": {
+    "budget_mb": 800.0,
+    "vanilla_oom": true,
+    "vanilla_peak_mb": 832.4,
+    "diet_oom": false,
+    "diet_peak_mb": 758.65,
+    "zerogs_oom": false,
+    "zerogs_peak_mb": 768.0,
+    "zerogs_prune_first_triggers": 14,
+    "zerogs_shrink_triggers": 0,
+    "zerogs_final_pts": 808468
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "num_total_primitives": 50000,
+  "num_fine_structures": 5000,
+  "spare_foliage_pruned": 1494,
+  "spare_foliage_pruned_pct": 29.88,
+  "zerogs_foliage_protected_count": 2084,
+  "zerogs_foliage_pruned": 1312,
+  "zerogs_foliage_pruned_pct": 26.24,
+  "foliage_retention_improvement": 3.64
+}
