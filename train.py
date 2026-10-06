@@ -2,7 +2,7 @@
 ZeroGS: Byte-Level Transient Memory Modeling and Occlusion-Aware Admission Control
 for Budget-Constrained 3D Gaussian Splatting.
 
-Complete integration into the 3DGS training loop (train.py).
+Complete integration into the official 3DGS training loop (train.py).
 Replaces unconstrained/count-based densification with deterministic, byte-aware
 Zero-OOM admission control and occlusion-compensated marginal utility scheduling.
 """
@@ -18,48 +18,35 @@ import torch
 from tqdm import tqdm
 
 # =========================================================================
-# IMPORT ZERO-OOM & OCCLUSION-AWARE MODULES
+# 1. OFFICIAL 3DGS MODULE IMPORTS
+# =========================================================================
+from utils.loss_utils import l1_loss, ssim
+from gaussian_renderer import render, network_gui
+from scene import Scene, GaussianModel
+from utils.general_utils import safe_state
+from utils.image_utils import psnr
+from arguments import ModelParams, PipelineParams, OptimizationParams
+
+# =========================================================================
+# 2. ZERO-OOM & OCCLUSION-AWARE SYSTEM RUNTIME MODULES
 # =========================================================================
 from zerogs.cost_model import ByteCostModel
 from zerogs.admission_controller import AdmissionController, AdmissionAction
 from zerogs.occlusion_engine import OcclusionAwareEngine, OcclusionAwareDemandEstimator
 from zerogs.marginal_allocator import MarginalUtilityAllocator
 
-# Graceful import of official 3DGS submodules or mock fallback
-try:
-    from utils.loss_utils import l1_loss, ssim
-    from gaussian_renderer import render, network_gui
-    from scene import Scene, GaussianModel
-    from utils.general_utils import safe_state
-    from utils.image_utils import psnr
-    from arguments import ModelParams, PipelineParams, OptimizationParams
-    HAS_3DGS_DEPS = True
-except ImportError:
-    HAS_3DGS_DEPS = False
-    from zerogs.mock_gaussian_model import (
-        MockGaussianModel as GaussianModel,
-        MockCamera,
-        mock_render as render,
-    )
-
-    class DummyNetworkGUI:
-        conn = None
-        def try_connect(self): pass
-        def receive(self): return None, False, None, None, False, 1.0
-        def send(self, *args): pass
-    network_gui = DummyNetworkGUI()
-
-    def l1_loss(network_output, gt):
-        return torch.abs((network_output - gt)).mean()
-
-    def ssim(img1, img2):
-        return torch.tensor(0.95, device=img1.device)
+# Standalone simulation fallback model for running tests without COLMAP datasets
+from zerogs.mock_gaussian_model import (
+    MockGaussianModel,
+    MockCamera,
+    mock_render,
+)
 
 
 def training(
-    dataset: Any,
-    opt: Any,
-    pipe: Any,
+    dataset: ModelParams,
+    opt: OptimizationParams,
+    pipe: PipelineParams,
     testing_iterations: list,
     saving_iterations: list,
     checkpoint_iterations: list,
@@ -68,10 +55,12 @@ def training(
 ):
     first_iter = 0
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"\n[ZeroGS] Initializing training on device: {device}")
+    # Check if a valid COLMAP dataset exists in source_path
+    has_valid_scene = os.path.exists(os.path.join(dataset.source_path, "sparse")) or os.path.exists(os.path.join(dataset.source_path, "cameras.json"))
+    is_simulation = (not has_valid_scene) or getattr(opt, "simulation_mode", False)
 
-    # Initialize Gaussian Model
-    if HAS_3DGS_DEPS:
+    # Initialize Gaussian Model & Scene
+    if not is_simulation:
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians)
         gaussians.training_setup(opt)
@@ -82,9 +71,9 @@ def training(
         background = torch.tensor(bg_color, dtype=torch.float32, device=device)
         scene_extent = scene.cameras_extent
     else:
-        print("[ZeroGS] 3DGS submodules not found in global path; running in self-contained simulation mode.")
-        num_init_pts = getattr(opt, "num_init_points", 50000)
-        gaussians = GaussianModel(sh_degree=dataset.sh_degree, num_points=num_init_pts, device=device)
+        print("[ZeroGS] No COLMAP source_path specified; running in self-contained simulation mode.")
+        num_init_pts = getattr(opt, "num_init_points", 5000)
+        gaussians = MockGaussianModel(sh_degree=dataset.sh_degree, num_points=num_init_pts, device=device)
         scene = None
         background = torch.zeros(3, device=device)
         scene_extent = 3.0
@@ -98,7 +87,7 @@ def training(
     first_iter += 1
 
     # =========================================================================
-    # 1. INITIALIZE ZERO-OOM SYSTEM RUNTIME CONTROLLERS
+    # 3. INITIALIZE ZERO-OOM SYSTEM RUNTIME CONTROLLERS
     # =========================================================================
     hard_vram_limit_mb = getattr(opt, "hard_vram_limit_mb", 8192.0)
     safety_headroom_mb = getattr(opt, "safety_headroom_mb", 512.0)
@@ -139,6 +128,19 @@ def training(
     # MAIN TRAINING LOOP
     # =========================================================================
     for iteration in range(first_iter, opt.iterations + 1):
+        if not is_simulation and network_gui.conn is not None:
+            try:
+                net_image_bytes = None
+                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifier = network_gui.receive()
+                if custom_cam is not None:
+                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifier)["render"]
+                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+                network_gui.send(net_image_bytes, dataset.source_path)
+                if not keep_alive:
+                    break
+            except Exception:
+                network_gui.conn = None
+
         if iter_start is not None:
             iter_start.record()
 
@@ -147,7 +149,7 @@ def training(
             gaussians.oneupSHdegree()
 
         # Camera selection
-        if HAS_3DGS_DEPS:
+        if not is_simulation:
             if not viewpoint_stack:
                 viewpoint_stack = scene.getTrainCameras().copy()
             viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
@@ -159,7 +161,11 @@ def training(
         # ---------------------------------------------------------------------
         # FORWARD PASS: RENDER KÈM TRÍCH XUẤT TRANSMITTANCE & DEPTH VARIANCE
         # ---------------------------------------------------------------------
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        if not is_simulation:
+            render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        else:
+            render_pkg = mock_render(viewpoint_cam, gaussians, pipe, bg)
+
         image = render_pkg["render"]
         viewspace_point_tensor = render_pkg["viewspace_points"]
         visibility_filter = render_pkg["visibility_filter"]
@@ -334,53 +340,56 @@ def training(
 
 def build_parser():
     parser = ArgumentParser(description="ZeroGS Training Engine")
-    parser.add_argument("--iterations", type=int, default=1000)
-    parser.add_argument("--densify_from_iter", type=int, default=100)
-    parser.add_argument("--densify_until_iter", type=int, default=900)
-    parser.add_argument("--densification_interval", type=int, default=100)
-    parser.add_argument("--opacity_reset_interval", type=int, default=3000)
-    parser.add_argument("--densify_grad_threshold", type=float, default=0.0002)
-    parser.add_argument("--percent_dense", type=float, default=0.01)
-    parser.add_argument("--sh_degree", type=int, default=3)
+    lp = ModelParams(parser)
+    op = OptimizationParams(parser)
+    pp = PipelineParams(parser)
+
+    parser.add_argument("--ip", type=str, default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=6009)
+    parser.add_argument("--debug_from", type=int, default=-1)
+    parser.add_argument("--detect_anomaly", action="store_true", default=False)
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--start_checkpoint", type=str, default=None)
+
+    # ZeroGS Budget & Occlusion Runtime Parameters
     parser.add_argument("--hard_vram_limit_mb", type=float, default=8192.0)
     parser.add_argument("--safety_headroom_mb", type=float, default=512.0)
     parser.add_argument("--gamma_occ", type=float, default=0.35)
     parser.add_argument("--transmittance_tau", type=float, default=0.25)
-    parser.add_argument("--white_background", action="store_true")
-    parser.add_argument("--random_background", action="store_true")
     parser.add_argument("--enable_zero_oom", action="store_true", default=True)
-    return parser
+    parser.add_argument("--simulation_mode", action="store_true", default=False)
+
+    return parser, lp, op, pp
 
 
 if __name__ == "__main__":
-    parser = build_parser()
+    parser, lp, op, pp = build_parser()
     args = parser.parse_args()
 
-    class MockOpts:
-        iterations = args.iterations
-        densify_from_iter = args.densify_from_iter
-        densify_until_iter = args.densify_until_iter
-        densification_interval = args.densification_interval
-        opacity_reset_interval = args.opacity_reset_interval
-        densify_grad_threshold = args.densify_grad_threshold
-        percent_dense = args.percent_dense
-        hard_vram_limit_mb = args.hard_vram_limit_mb
-        safety_headroom_mb = args.safety_headroom_mb
-        gamma_occ = args.gamma_occ
-        transmittance_tau = args.transmittance_tau
-        enable_zero_oom = args.enable_zero_oom
-        random_background = args.random_background
-        num_init_points = 5000
+    # Extract grouped arguments
+    dataset_args = lp.extract(args)
+    opt_args = op.extract(args)
+    pipe_args = pp.extract(args)
 
-    class MockDataset:
-        sh_degree = args.sh_degree
-        white_background = args.white_background
+    # Attach custom ZeroGS arguments to opt namespace
+    opt_args.hard_vram_limit_mb = args.hard_vram_limit_mb
+    opt_args.safety_headroom_mb = args.safety_headroom_mb
+    opt_args.gamma_occ = args.gamma_occ
+    opt_args.transmittance_tau = args.transmittance_tau
+    opt_args.enable_zero_oom = args.enable_zero_oom
+    opt_args.simulation_mode = args.simulation_mode
+    opt_args.num_init_points = 5000
 
     training(
-        dataset=MockDataset(),
-        opt=MockOpts(),
-        pipe=None,
-        testing_iterations=[],
-        saving_iterations=[args.iterations],
-        checkpoint_iterations=[],
+        dataset=dataset_args,
+        opt=opt_args,
+        pipe=pipe_args,
+        testing_iterations=args.test_iterations,
+        saving_iterations=args.save_iterations,
+        checkpoint_iterations=args.checkpoint_iterations,
+        checkpoint=args.start_checkpoint,
+        debug_from=args.debug_from,
     )
