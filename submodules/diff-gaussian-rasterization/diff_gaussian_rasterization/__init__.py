@@ -12,7 +12,7 @@
 from typing import NamedTuple
 import torch.nn as nn
 import torch
-from . import _C
+from . import _C  # type: ignore
 
 def cpu_deep_copy_tuple(input_tuple):
     copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
@@ -97,7 +97,7 @@ class _RasterizeGaussians(torch.autograd.Function):
         return color, radii, invdepths, mean_T, depth_var, vis_count
 
     @staticmethod
-    def backward(ctx, grad_out_color, grad_radii, grad_out_depth, grad_mean_T=None, grad_depth_var=None, grad_vis_count=None):
+    def backward(ctx, grad_out_color, grad_radii, grad_out_depth, grad_mean_T=None, grad_depth_var=None, grad_vis_count=None):  # type: ignore[override]
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered

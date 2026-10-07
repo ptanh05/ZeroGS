@@ -415,12 +415,18 @@ class GaussianModel:
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
-        # Extract points that satisfy the gradient condition
-        padded_grad = torch.zeros((n_init_points), device="cuda")
-        padded_grad[:grads.shape[0]] = grads.squeeze()
-        selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
+        if grads.dtype == torch.bool:
+            if grads.shape[0] < n_init_points:
+                selected_pts_mask = torch.cat((grads, torch.zeros(n_init_points - grads.shape[0], device="cuda", dtype=torch.bool)))
+            else:
+                selected_pts_mask = grads
+        else:
+            # Extract points that satisfy the gradient condition
+            padded_grad = torch.zeros((n_init_points), device="cuda")
+            padded_grad[:grads.shape[0]] = grads.squeeze()
+            selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
+            selected_pts_mask = torch.logical_and(selected_pts_mask,
+                                                  torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
 
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
         means =torch.zeros((stds.size(0), 3),device="cuda")
@@ -440,10 +446,16 @@ class GaussianModel:
         self.prune_points(prune_filter)
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
-        # Extract points that satisfy the gradient condition
-        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
+        if grads.dtype == torch.bool:
+            if grads.shape[0] < self.get_xyz.shape[0]:
+                selected_pts_mask = torch.cat((grads, torch.zeros(self.get_xyz.shape[0] - grads.shape[0], device="cuda", dtype=torch.bool)))
+            else:
+                selected_pts_mask = grads
+        else:
+            # Extract points that satisfy the gradient condition
+            selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
+            selected_pts_mask = torch.logical_and(selected_pts_mask,
+                                                  torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
         
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]

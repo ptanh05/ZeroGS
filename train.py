@@ -311,11 +311,11 @@ def training(
                         n_split_quota=decision["n_split"],
                     )
 
-                    # g. Safely Execute Densification
-                    if final_split_mask.sum() > 0:
-                        gaussians.densify_and_split(final_split_mask, opt.densify_grad_threshold, scene_extent)
+                    # g. Safely Execute Densification (Clone first, then Split)
                     if final_clone_mask.sum() > 0:
                         gaussians.densify_and_clone(final_clone_mask, opt.densify_grad_threshold, scene_extent)
+                    if final_split_mask.sum() > 0:
+                        gaussians.densify_and_split(final_split_mask, opt.densify_grad_threshold, scene_extent)
 
                     # h. Reset Accumulators for New Population
                     new_pts = gaussians.get_xyz.shape[0]

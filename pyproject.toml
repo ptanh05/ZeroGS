@@ -27,3 +27,20 @@ dependencies = [
 test = [
     "pytest>=7.0.0",
 ]
+
+[tool.pyrefly]
+search-path = [
+    ".",
+    "submodules/diff-gaussian-rasterization",
+]
+
+[tool.pyright]
+extraPaths = [
+    ".",
+    "submodules/diff-gaussian-rasterization",
+]
+exclude = [
+    "**/build",
+    "**/dist",
+    "submodules/*/build",
+]

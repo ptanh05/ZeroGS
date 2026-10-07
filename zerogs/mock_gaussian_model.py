@@ -147,7 +147,11 @@ class MockGaussianModel:
         In vanilla 3DGS, this concatenates newly cloned points onto existing tensors.
         """
         if isinstance(grads, torch.Tensor) and grads.dtype == torch.bool:
-            selected_pts_mask = grads
+            if grads.shape[0] < self._xyz.shape[0]:
+                pad = torch.zeros(self._xyz.shape[0] - grads.shape[0], dtype=torch.bool, device=self.device)
+                selected_pts_mask = torch.cat([grads, pad])
+            else:
+                selected_pts_mask = grads
         else:
             selected_pts_mask = grads >= grad_threshold
 
@@ -217,7 +221,11 @@ class MockGaussianModel:
         Crucially replicates the transient peak spike of 3DGS!
         """
         if isinstance(grads, torch.Tensor) and grads.dtype == torch.bool:
-            selected_pts_mask = grads
+            if grads.shape[0] < self._xyz.shape[0]:
+                pad = torch.zeros(self._xyz.shape[0] - grads.shape[0], dtype=torch.bool, device=self.device)
+                selected_pts_mask = torch.cat([grads, pad])
+            else:
+                selected_pts_mask = grads
         else:
             selected_pts_mask = grads >= grad_threshold
 

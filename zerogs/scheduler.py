@@ -205,14 +205,14 @@ class MemoryBoundedDensificationScheduler:
             n_split_quota=decision.n_split,
         )
 
-        # 7. Safe Execution of Densification
-        n_split_executed = int(final_split_mask.sum().item())
+        # 7. Safe Execution of Densification (Clone first, then Split)
         n_clone_executed = int(final_clone_mask.sum().item())
+        n_split_executed = int(final_split_mask.sum().item())
 
-        if n_split_executed > 0:
-            gaussians.densify_and_split(final_split_mask, densify_grad_threshold, scene_extent)
         if n_clone_executed > 0:
             gaussians.densify_and_clone(final_clone_mask, densify_grad_threshold, scene_extent)
+        if n_split_executed > 0:
+            gaussians.densify_and_split(final_split_mask, densify_grad_threshold, scene_extent)
 
         # 8. Reset Buffers for New Population
         new_num_gaussians = gaussians.get_xyz.shape[0]
