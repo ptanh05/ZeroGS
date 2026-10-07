@@ -57,3 +57,6 @@ def mark_visible(
     viewmatrix: torch.Tensor,
     projmatrix: torch.Tensor,
 ) -> torch.Tensor: ...
+
+class SparseGaussianAdam(torch.optim.Optimizer): ...
+

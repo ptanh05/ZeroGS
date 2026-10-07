@@ -14,6 +14,9 @@ import torch.nn as nn
 import torch
 from . import _C  # type: ignore
 
+# Optional fused optimizer (present in specialized/accelerated rasterizer builds)
+SparseGaussianAdam = getattr(_C, "SparseGaussianAdam", None)
+
 def cpu_deep_copy_tuple(input_tuple):
     copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
     return tuple(copied_tensors)

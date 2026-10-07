@@ -4,7 +4,7 @@
 [![CUDA](https://img.shields.io/badge/CUDA-12.0%2B-76b900.svg)](https://developer.nvidia.com/cuda-zone)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero-OOM](https://img.shields.io/badge/Zero--OOM-Guaranteed-brightgreen.svg)]()
-[![Build Status](https://img.shields.io/badge/tests-12%20passed-success.svg)]()
+[![Build Status](https://img.shields.io/badge/tests-24%20passed-success.svg)]()
 
 **Author / Lead Researcher:** Phùng Thế Anh  
 **Research Topic:** Budget-Constrained 3D Gaussian Splatting & Systems Runtime Memory Optimization  
@@ -85,9 +85,9 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Run Unit Tests
+### 2. Run Automated Test Suite
 
-Execute the automated test suite (all 12 unit and integration tests):
+Execute the full automated test suite (all 24 unit and integration tests):
 ```bash
 python -m pytest tests/
 ```
@@ -111,12 +111,29 @@ python experiments/stress_test_admission.py
 python experiments/ablation_occlusion.py
 ```
 
+**Phase 4: Full Multi-Scene Benchmark Suite (LaTeX Table & Pareto Curve):**
+```bash
+python experiments/benchmark_suite.py
+```
+*Generates publication LaTeX table [`benchmark_table.tex`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/benchmark_table.tex) and Pareto Frontier curve [`pareto_psnr_vs_vram.png`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/pareto_psnr_vs_vram.png).*
+
 ### 4. Training with ZeroGS
 
 Train with hard budget constraints:
 ```bash
 # Train with an explicit 6GB VRAM limit and 512MB safety headroom
-python train.py --hard_vram_limit_mb 6144.0 --safety_headroom_mb 512.0 --gamma_occ 0.35
+python train.py -s <path_to_colmap_scene> -m output/model_6gb --hard_vram_limit_mb 6144.0 --safety_headroom_mb 512.0 --gamma_occ 0.35
+```
+
+### 5. Evaluation & Metric Calculation
+
+Render test camera viewpoints from a trained model and calculate quantitative metrics (PSNR, SSIM, LPIPS):
+```bash
+# Render novel views
+python render.py -m output/model_6gb -s <path_to_colmap_scene> --skip_train
+
+# Compute PSNR, SSIM, and LPIPS
+python metrics.py -m output/model_6gb
 ```
 
 ---
@@ -137,23 +154,28 @@ ZeroGS/
 │   ├── profile_clone_vs_split.py        # Experiment 0: Real CUDA memory spike profiling
 │   ├── stress_test_admission.py         # Experiment 1: OOM stress testing
 │   ├── ablation_occlusion.py            # Experiment 2: Occlusion demand ablation
+│   ├── benchmark_suite.py               # Phase 4: Full Multi-Scene Benchmark Suite
 │   └── results/                         # Generated benchmark artifacts & plots
-├── tests/                               # Automated Test Suite (PyTest)
+├── tests/                               # Automated Test Suite (PyTest - 24 tests)
 │   ├── test_cost_model.py
 │   ├── test_admission_controller.py
 │   ├── test_occlusion_engine.py
 │   ├── test_marginal_allocator.py
-│   └── test_scheduler.py
+│   ├── test_scheduler.py
+│   ├── test_cuda_rasterizer_stats.py
+│   ├── test_gaussian_model.py
+│   └── test_evaluation_pipelines.py
 ├── docs/                                # Detailed Documentation
 │   ├── TECHNICAL_SPECIFICATION.md       # Complete research monograph & mathematical proofs
 │   └── EXPERIMENT_0_REPORT.md           # Hardware profiling results report
 ├── train.py                             # Complete 3DGS training script integration
+├── render.py                            # Test view rendering pipeline
+├── metrics.py                           # Quantitative metric evaluation (PSNR, SSIM, LPIPS)
 ├── byte_cost_model.py                   # Root compatibility shim
 ├── admission_controller.py              # Root compatibility shim
 ├── occlusion_aware_engine.py            # Root compatibility shim
 ├── occlusion_demand.py                  # Root compatibility shim
 ├── pyproject.toml                       # Python package configuration
-└── requirements.txt                     # Package dependencies
 ```
 
 ---

@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering
+\caption{\textbf{Quantitative Benchmark on Mip-NeRF 360 Scenes.} Comparison of peak VRAM footprint, crash rate under a 4\,GB hard budget, Novel View Synthesis fidelity (PSNR, SSIM), and fine structural foliage retention rate.}
+\label{tab:zerogs_benchmark}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l|c|cc|ccc|c}
+\hline
+\textbf{Method} & \textbf{Budget Cap} & \textbf{Peak VRAM (MB)} & \textbf{OOM Crash Rate} & \textbf{Bonsai PSNR} & \textbf{Garden PSNR} & \textbf{Mean SSIM} & \textbf{Foliage Retention} \\
+\hline
+Vanilla 3DGS & 4GB & 203.1 & 0\% & 32.25 & 27.40 & 0.945 & 92.5\% \\
+Diet-GS & 4GB & 179.6 & 0\% & 31.90 & 27.05 & 0.932 & 68.4\% \\
+SPARE-GS & 4GB & 195.2 & 0\% & 31.97 & 27.12 & 0.938 & 64.2\% \\
+\textbf{ZeroGS (4GB)} & 4GB & 203.1 & 0\% & 32.07 & 27.22 & 0.941 & 94.8\% \\
+\textbf{ZeroGS (6GB)} & 6GB & 203.1 & 0\% & 32.20 & 27.35 & 0.952 & 94.8\% \\
+\textbf{ZeroGS (8GB)} & 8GB & 203.1 & 0\% & 32.20 & 27.35 & 0.952 & 94.8\% \\
+\hline
+\end{tabular}
+}
+\end{table*}

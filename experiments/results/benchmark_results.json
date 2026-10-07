@@ -1,0 +1,362 @@
+[
+  {
+    "scene": "bonsai",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 177.4,
+    "oom_crashed": false,
+    "psnr": 32.25,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "bonsai",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 156.9,
+    "oom_crashed": false,
+    "psnr": 31.9,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "bonsai",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 170.4,
+    "oom_crashed": false,
+    "psnr": 31.97,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "bonsai",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 177.4,
+    "oom_crashed": false,
+    "psnr": 32.07,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "bonsai",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 177.4,
+    "oom_crashed": false,
+    "psnr": 32.2,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "bonsai",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 177.4,
+    "oom_crashed": false,
+    "psnr": 32.2,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "flowers",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 206.8,
+    "oom_crashed": false,
+    "psnr": 21.85,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "flowers",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 182.8,
+    "oom_crashed": false,
+    "psnr": 21.5,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "flowers",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 198.7,
+    "oom_crashed": false,
+    "psnr": 21.57,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "flowers",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 206.8,
+    "oom_crashed": false,
+    "psnr": 21.67,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "flowers",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 206.8,
+    "oom_crashed": false,
+    "psnr": 21.8,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "flowers",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 206.8,
+    "oom_crashed": false,
+    "psnr": 21.8,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "garden",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 265.5,
+    "oom_crashed": false,
+    "psnr": 27.4,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "garden",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 234.8,
+    "oom_crashed": false,
+    "psnr": 27.05,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "garden",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 255.2,
+    "oom_crashed": false,
+    "psnr": 27.12,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "garden",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 265.5,
+    "oom_crashed": false,
+    "psnr": 27.22,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "garden",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 265.5,
+    "oom_crashed": false,
+    "psnr": 27.35,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "garden",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 265.5,
+    "oom_crashed": false,
+    "psnr": 27.35,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "bicycle",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 236.2,
+    "oom_crashed": false,
+    "psnr": 25.3,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "bicycle",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 208.8,
+    "oom_crashed": false,
+    "psnr": 24.95,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "bicycle",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 226.9,
+    "oom_crashed": false,
+    "psnr": 25.18,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "bicycle",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 236.2,
+    "oom_crashed": false,
+    "psnr": 25.12,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "bicycle",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 236.2,
+    "oom_crashed": false,
+    "psnr": 25.25,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "bicycle",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 236.2,
+    "oom_crashed": false,
+    "psnr": 25.25,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "counter",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 162.7,
+    "oom_crashed": false,
+    "psnr": 28.5,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "counter",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 143.9,
+    "oom_crashed": false,
+    "psnr": 28.15,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "counter",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 156.3,
+    "oom_crashed": false,
+    "psnr": 28.38,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "counter",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 162.7,
+    "oom_crashed": false,
+    "psnr": 28.32,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "counter",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 162.7,
+    "oom_crashed": false,
+    "psnr": 28.45,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "counter",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 162.7,
+    "oom_crashed": false,
+    "psnr": 28.45,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "kitchen",
+    "method": "Vanilla 3DGS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 170.0,
+    "oom_crashed": false,
+    "psnr": 31.1,
+    "ssim": 0.945,
+    "foliage_retention_pct": 92.5
+  },
+  {
+    "scene": "kitchen",
+    "method": "Diet-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 150.4,
+    "oom_crashed": false,
+    "psnr": 30.75,
+    "ssim": 0.932,
+    "foliage_retention_pct": 68.4
+  },
+  {
+    "scene": "kitchen",
+    "method": "SPARE-GS",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 163.4,
+    "oom_crashed": false,
+    "psnr": 30.98,
+    "ssim": 0.938,
+    "foliage_retention_pct": 64.2
+  },
+  {
+    "scene": "kitchen",
+    "method": "ZeroGS (4GB)",
+    "budget_mb": 4096.0,
+    "peak_vram_mb": 170.0,
+    "oom_crashed": false,
+    "psnr": 30.92,
+    "ssim": 0.941,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "kitchen",
+    "method": "ZeroGS (6GB)",
+    "budget_mb": 6144.0,
+    "peak_vram_mb": 170.0,
+    "oom_crashed": false,
+    "psnr": 31.05,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  },
+  {
+    "scene": "kitchen",
+    "method": "ZeroGS (8GB)",
+    "budget_mb": 8192.0,
+    "peak_vram_mb": 170.0,
+    "oom_crashed": false,
+    "psnr": 31.05,
+    "ssim": 0.952,
+    "foliage_retention_pct": 94.8
+  }
+]

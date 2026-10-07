@@ -60,7 +60,12 @@ class ModelParams(ParamGroup):
 
     def extract(self, args):
         g = super().extract(args)
-        g.source_path = os.path.abspath(g.source_path)
+        if hasattr(g, "source_path") and g.source_path:
+            g.source_path = os.path.abspath(g.source_path)
+        else:
+            g.source_path = ""
+        if not hasattr(g, "model_path"):
+            g.model_path = ""
         return g
 
 class PipelineParams(ParamGroup):
@@ -135,7 +140,7 @@ def get_combined_args(parser : ArgumentParser):
         with open(cfgfilepath) as cfg_file:
             print("Config file found: {}".format(cfgfilepath))
             cfgfile_string = cfg_file.read()
-    except TypeError:
+    except (TypeError, FileNotFoundError):
         print("Config file not found at")
         pass
     args_cfgfile = eval(cfgfile_string)

@@ -125,8 +125,32 @@ def training(
     accum_transmittance = torch.zeros(num_pts, dtype=torch.float32, device=device)
     accum_depth_var = torch.zeros(num_pts, dtype=torch.float32, device=device)
     viewspace_point_tensor_grad = torch.zeros(num_pts, device=device)
-
     print(f"[ZeroGS] Configured: Hard Budget={hard_vram_limit_mb}MB, Safety Headroom={safety_headroom_mb}MB, gamma_occ={gamma_occ}")
+
+    # Neural-Controlled Adaptive GS extensions
+    use_opacity_network = getattr(opt, "use_opacity_network", False)
+    use_antialiasing = getattr(pipe, "antialiasing", False) or getattr(opt, "use_antialiasing", False)
+    use_policy_network = getattr(opt, "use_policy_network", False)
+
+    opacity_network = None
+    opacity_optimizer = None
+    if use_opacity_network and not is_simulation:
+        from scene.opacity_network import OpacityFieldNetwork
+        opacity_network = OpacityFieldNetwork().to(device)
+        opacity_optimizer = torch.optim.Adam(
+            opacity_network.parameters(), lr=getattr(opt, "opacity_network_lr", 1e-4)
+        )
+
+    if use_policy_network:
+        from scene.policy_network import SplitPolicyNetwork
+        policy_network = SplitPolicyNetwork().to(device)
+        policy_optimizer = torch.optim.Adam(
+            policy_network.parameters(), lr=getattr(opt, "policy_lr", 1e-4)
+        )
+        if hasattr(gaussians, "policy_network"):
+            gaussians.policy_network = policy_network
+            gaussians.policy_optimizer = policy_optimizer
+            gaussians.use_policy_network = True
 
     # =========================================================================
     # MAIN TRAINING LOOP
@@ -166,7 +190,12 @@ def training(
         # FORWARD PASS: RENDER KÈM TRÍCH XUẤT TRANSMITTANCE & DEPTH VARIANCE
         # ---------------------------------------------------------------------
         if not is_simulation:
-            render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+            render_pkg = render(
+                viewpoint_cam, gaussians, pipe, bg,
+                use_opacity_network=use_opacity_network,
+                opacity_network=opacity_network,
+                use_antialiasing=use_antialiasing,
+            )
         else:
             render_pkg = mock_render(viewpoint_cam, gaussians, pipe, bg)
 
@@ -334,6 +363,9 @@ def training(
             # Optimizer step
             gaussians.optimizer.step()
             gaussians.optimizer.zero_grad(set_to_none=True)
+            if opacity_optimizer is not None:
+                opacity_optimizer.step()
+                opacity_optimizer.zero_grad(set_to_none=True)
 
             if iteration in saving_iterations or iteration in checkpoint_iterations:
                 print(f"\n[ITER {iteration}] Checkpoint saved with {gaussians.get_xyz.shape[0]:,} Gaussians.")
