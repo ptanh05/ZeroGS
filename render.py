@@ -8,7 +8,7 @@ and exports rendered images and ground truth images for metric computation.
 import os
 import sys
 from argparse import ArgumentParser
-from typing import List, Optional
+from typing import List, Optional, Union, Any
 import torch
 import torchvision
 from tqdm import tqdm
@@ -22,10 +22,10 @@ from zerogs.mock_gaussian_model import MockGaussianModel, MockCamera, mock_rende
 def render_set(
     model_path: str,
     name: str,
-    iteration: int,
+    iteration: Optional[int],
     views: list,
-    gaussians: GaussianModel,
-    pipeline: PipelineParams,
+    gaussians: Union[GaussianModel, MockGaussianModel],
+    pipeline: Any,
     background: torch.Tensor,
     is_simulation: bool = False,
 ):
@@ -37,7 +37,7 @@ def render_set(
 
     desc = f"Rendering {name} views (iter {iteration})"
     for idx, view in enumerate(tqdm(views, desc=desc)):
-        if not is_simulation:
+        if not is_simulation and isinstance(gaussians, GaussianModel):
             rendering = render(view, gaussians, pipeline, background)["render"]
             gt = view.original_image[0:3, :, :].to(rendering.device)
         else:
@@ -54,9 +54,9 @@ def render_set(
 
 
 def render_sets(
-    dataset: ModelParams,
+    dataset: Any,
     iteration: int,
-    pipeline: PipelineParams,
+    pipeline: Any,
     skip_train: bool,
     skip_test: bool,
     simulation_mode: bool = False,

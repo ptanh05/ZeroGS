@@ -357,8 +357,8 @@ class MockCamera:
 
 
 def mock_render(
-    camera: MockCamera,
-    gaussians: MockGaussianModel,
+    camera: Any,
+    gaussians: Any,
     pipe: Any = None,
     background: Any = None,
 ) -> Dict[str, Any]:
@@ -371,7 +371,12 @@ def mock_render(
     - depth_var (depth variance)
     - vis_count
     """
-    dev = gaussians.device
+    dev = getattr(gaussians, "device", None)
+    if dev is None:
+        try:
+            dev = gaussians.get_xyz.device
+        except Exception:
+            dev = "cuda" if torch.cuda.is_available() else "cpu"
     N = gaussians.get_xyz.shape[0]
 
     # Random visibility filter (~80% visible)
