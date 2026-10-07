@@ -81,19 +81,40 @@ class MockGaussianModel:
                 state["exp_avg"] = torch.zeros_like(p, memory_format=torch.preserve_format)
                 state["exp_avg_sq"] = torch.zeros_like(p, memory_format=torch.preserve_format)
 
-    def _replace_tensor_to_optimizer(self, tensor: torch.Tensor, name: str) -> torch.Tensor:
-        """Replaces a parameter tensor and transfers/resizes its Adam states."""
-        optimizable_tensors = {}
+    def replace_tensor_to_optimizer(
+        self, tensor: torch.Tensor, name: str
+    ) -> Dict[str, torch.Tensor]:
+        """Official 3DGS interface: replaces parameter tensor and transfers/resizes its Adam states."""
+        optimizable_tensors: Dict[str, torch.Tensor] = {}
+        if self.optimizer is None:
+            group_param = nn.Parameter(tensor.requires_grad_(True))
+            optimizable_tensors[name] = group_param
+            return optimizable_tensors
+
         for group in self.optimizer.param_groups:
             if group["name"] == name:
                 stored_state = self.optimizer.state.get(group["params"][0], None)
-                stored_state["exp_avg"] = torch.zeros_like(tensor)
-                stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+                if stored_state is not None:
+                    stored_state["exp_avg"] = torch.zeros_like(tensor)
+                    stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
 
-                del self.optimizer.state[group["params"][0]]
-                group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
-                self.optimizer.state[group["params"][0]] = stored_state
-                optimizable_tensors[group["name"]] = group["params"][0]
+                    del self.optimizer.state[group["params"][0]]
+                    group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
+                    self.optimizer.state[group["params"][0]] = stored_state
+                    optimizable_tensors[group["name"]] = group["params"][0]
+                else:
+                    group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
+                    self.optimizer.state[group["params"][0]] = {
+                        "step": torch.tensor(1.0, device=self.device),
+                        "exp_avg": torch.zeros_like(tensor),
+                        "exp_avg_sq": torch.zeros_like(tensor),
+                    }
+                    optimizable_tensors[group["name"]] = group["params"][0]
+        return optimizable_tensors
+
+    def _replace_tensor_to_optimizer(self, tensor: torch.Tensor, name: str) -> torch.Tensor:
+        """Replaces a parameter tensor and transfers/resizes its Adam states."""
+        optimizable_tensors = self.replace_tensor_to_optimizer(tensor, name)
         return optimizable_tensors[name]
 
     def prune_points(self, mask: torch.Tensor) -> None:
