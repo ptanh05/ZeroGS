@@ -45,7 +45,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        debug=pipe.debug
+        debug=pipe.debug,
+        antialiasing=use_antialiasing
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -171,12 +172,17 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             rotations = rotations,
             cov3D_precomp = cov3D_precomp)
 
-    # Handle different return formats (2 or 3 values)
+    # Handle different return formats (2, 3, or 6 values)
+    mean_T = None
+    depth_var = None
+    vis_count = None
     if len(rasterizer_output) == 2:
         rendered_image, radii = rasterizer_output
         depth_image = None
-    else:
+    elif len(rasterizer_output) == 3:
         rendered_image, radii, depth_image = rasterizer_output
+    else:
+        rendered_image, radii, depth_image, mean_T, depth_var, vis_count = rasterizer_output[:6]
         
     # Apply exposure to rendered image (training only)
     if use_trained_exp:
@@ -191,7 +197,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         "viewspace_points": screenspace_points,
         "visibility_filter" : (radii > 0).nonzero(),
         "radii": radii,
-        "depth" : depth_image
-        }
+        "depth" : depth_image,
+        "mean_T": mean_T,
+        "depth_var": depth_var,
+        "vis_count": vis_count,
+    }
     
     return out

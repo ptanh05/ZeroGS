@@ -55,8 +55,12 @@ def training(
 ):
     first_iter = 0
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # Check if a valid COLMAP dataset exists in source_path
-    has_valid_scene = os.path.exists(os.path.join(dataset.source_path, "sparse")) or os.path.exists(os.path.join(dataset.source_path, "cameras.json"))
+    # Check if a valid COLMAP or Blender dataset exists in source_path
+    src = dataset.source_path.strip() if dataset.source_path else ""
+    has_valid_scene = bool(src) and (
+        os.path.exists(os.path.join(src, "sparse"))
+        or os.path.exists(os.path.join(src, "transforms_train.json"))
+    )
     is_simulation = (not has_valid_scene) or getattr(opt, "simulation_mode", False)
 
     # Initialize Gaussian Model & Scene

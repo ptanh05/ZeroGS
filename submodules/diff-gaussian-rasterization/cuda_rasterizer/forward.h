@@ -62,7 +62,19 @@ namespace FORWARD
 		const float* bg_color,
 		float* out_color,
 		float* depths,
-		float* depth);
+		float* depth,
+		float* accum_T = nullptr,
+		int* accum_count = nullptr,
+		float* accum_rad_sq = nullptr);
+
+	void finalizeStats(
+		int P,
+		const float* accum_T,
+		const int* accum_count,
+		const float* accum_rad_sq,
+		float* mean_T,
+		float* depth_var,
+		int* vis_count);
 }
 
 

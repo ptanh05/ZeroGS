@@ -1,108 +1,215 @@
-"""
-diff_gaussian_rasterization package shim for 3D Gaussian Splatting.
-Provides GaussianRasterizationSettings and GaussianRasterizer.
-Seamlessly falls back to a PyTorch implementation if compiled CUDA extension is not installed.
-"""
+#
+# Copyright (C) 2023, Inria
+# GRAPHDECO research group, https://team.inria.fr/graphdeco
+# All rights reserved.
+#
+# This software is free for non-commercial, research and evaluation use 
+# under the terms of the LICENSE.md file.
+#
+# For inquiries contact  george.drettakis@inria.fr
+#
 
-from typing import NamedTuple, Optional, Tuple, Any
+from typing import NamedTuple
+import torch.nn as nn
 import torch
-from torch import nn
+from . import _C
 
-try:
-    # Try importing compiled C++/CUDA extension if available
-    from . import _C
-    HAS_CUDA_EXTENSION = hasattr(_C, "rasterize_gaussians")
-except ImportError:
-    HAS_CUDA_EXTENSION = False
+def cpu_deep_copy_tuple(input_tuple):
+    copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
+    return tuple(copied_tensors)
 
+def rasterize_gaussians(
+    means3D,
+    means2D,
+    sh,
+    colors_precomp,
+    opacities,
+    scales,
+    rotations,
+    cov3Ds_precomp,
+    raster_settings,
+):
+    return _RasterizeGaussians.apply(
+        means3D,
+        means2D,
+        sh,
+        colors_precomp,
+        opacities,
+        scales,
+        rotations,
+        cov3Ds_precomp,
+        raster_settings,
+    )
+
+class _RasterizeGaussians(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        means3D,
+        means2D,
+        sh,
+        colors_precomp,
+        opacities,
+        scales,
+        rotations,
+        cov3Ds_precomp,
+        raster_settings,
+    ):
+
+        # Restructure arguments the way that the C++ lib expects them
+        args = (
+            raster_settings.bg, 
+            means3D,
+            colors_precomp,
+            opacities,
+            scales,
+            rotations,
+            raster_settings.scale_modifier,
+            cov3Ds_precomp,
+            raster_settings.viewmatrix,
+            raster_settings.projmatrix,
+            raster_settings.tanfovx,
+            raster_settings.tanfovy,
+            raster_settings.image_height,
+            raster_settings.image_width,
+            sh,
+            raster_settings.sh_degree,
+            raster_settings.campos,
+            raster_settings.prefiltered,
+            raster_settings.antialiasing,
+            raster_settings.debug
+        )
+
+        # Invoke C++/CUDA rasterizer
+        ret = _C.rasterize_gaussians(*args)
+        if len(ret) == 7:
+            num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer, invdepths = ret
+            mean_T = torch.ones_like(radii, dtype=torch.float32)
+            depth_var = torch.zeros_like(radii, dtype=torch.float32)
+            vis_count = torch.zeros_like(radii, dtype=torch.int32)
+        else:
+            num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer, invdepths, mean_T, depth_var, vis_count = ret
+
+        # Keep relevant tensors for backward
+        ctx.raster_settings = raster_settings
+        ctx.num_rendered = num_rendered
+        ctx.save_for_backward(colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, opacities, geomBuffer, binningBuffer, imgBuffer)
+        return color, radii, invdepths, mean_T, depth_var, vis_count
+
+    @staticmethod
+    def backward(ctx, grad_out_color, grad_radii, grad_out_depth, grad_mean_T=None, grad_depth_var=None, grad_vis_count=None):
+
+        # Restore necessary values from context
+        num_rendered = ctx.num_rendered
+        raster_settings = ctx.raster_settings
+        colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, sh, opacities, geomBuffer, binningBuffer, imgBuffer = ctx.saved_tensors
+
+        # Restructure args as C++ method expects them
+        args = (raster_settings.bg,
+                means3D, 
+                radii, 
+                colors_precomp, 
+                opacities,
+                scales, 
+                rotations, 
+                raster_settings.scale_modifier, 
+                cov3Ds_precomp, 
+                raster_settings.viewmatrix, 
+                raster_settings.projmatrix, 
+                raster_settings.tanfovx, 
+                raster_settings.tanfovy, 
+                grad_out_color,
+                grad_out_depth, 
+                sh, 
+                raster_settings.sh_degree, 
+                raster_settings.campos,
+                geomBuffer,
+                num_rendered,
+                binningBuffer,
+                imgBuffer,
+                raster_settings.antialiasing,
+                raster_settings.debug)
+
+        # Compute gradients for relevant tensors by invoking backward method
+        grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args)        
+
+        grads = (
+            grad_means3D,
+            grad_means2D,
+            grad_sh,
+            grad_colors_precomp,
+            grad_opacities,
+            grad_scales,
+            grad_rotations,
+            grad_cov3Ds_precomp,
+            None,
+        )
+
+        return grads
 
 class GaussianRasterizationSettings(NamedTuple):
     image_height: int
-    image_width: int
-    tanfovx: float
-    tanfovy: float
-    bg: torch.Tensor
-    scale_modifier: float
-    viewmatrix: torch.Tensor
-    projmatrix: torch.Tensor
-    sh_degree: int
-    campos: torch.Tensor
-    prefiltered: bool
-    debug: bool
-    antialiasing: bool = False
-
+    image_width: int 
+    tanfovx : float
+    tanfovy : float
+    bg : torch.Tensor
+    scale_modifier : float
+    viewmatrix : torch.Tensor
+    projmatrix : torch.Tensor
+    sh_degree : int
+    campos : torch.Tensor
+    prefiltered : bool
+    debug : bool
+    antialiasing : bool
 
 class GaussianRasterizer(nn.Module):
-    def __init__(self, raster_settings: GaussianRasterizationSettings):
+    def __init__(self, raster_settings):
         super().__init__()
         self.raster_settings = raster_settings
 
-    def markVisible(self, positions: torch.Tensor) -> torch.Tensor:
-        if HAS_CUDA_EXTENSION:
-            with torch.no_grad():
-                return _C.mark_visible(
-                    positions,
-                    self.raster_settings.viewmatrix,
-                    self.raster_settings.projmatrix,
-                )
-        # PyTorch fallback: simple frustum test
+    def markVisible(self, positions):
+        # Mark visible points (based on frustum culling for camera) with a boolean 
         with torch.no_grad():
-            p_hom = torch.cat([positions, torch.ones_like(positions[:, :1])], dim=-1)
-            p_proj = p_hom @ self.raster_settings.projmatrix
-            w = p_proj[:, 3:]
-            visible = (
-                (p_proj[:, 0:1] >= -w)
-                & (p_proj[:, 0:1] <= w)
-                & (p_proj[:, 1:2] >= -w)
-                & (p_proj[:, 1:2] <= w)
-                & (p_proj[:, 2:3] >= 0)
-                & (p_proj[:, 2:3] <= w)
-            ).squeeze(-1)
-            return visible
+            raster_settings = self.raster_settings
+            visible = _C.mark_visible(
+                positions,
+                raster_settings.viewmatrix,
+                raster_settings.projmatrix)
+            
+        return visible
 
-    def forward(
-        self,
-        means3D: torch.Tensor,
-        means2D: torch.Tensor,
-        opacities: torch.Tensor,
-        shs: Optional[torch.Tensor] = None,
-        colors_precomp: Optional[torch.Tensor] = None,
-        scales: Optional[torch.Tensor] = None,
-        rotations: Optional[torch.Tensor] = None,
-        cov3D_precomp: Optional[torch.Tensor] = None,
-        dc: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        if HAS_CUDA_EXTENSION:
-            # Delegate to native CUDA rasterizer
-            from . import rasterize_gaussians
-            return rasterize_gaussians(
-                means3D,
-                means2D,
-                shs if shs is not None else torch.Tensor([]),
-                colors_precomp if colors_precomp is not None else torch.Tensor([]),
-                opacities,
-                scales if scales is not None else torch.Tensor([]),
-                rotations if rotations is not None else torch.Tensor([]),
-                cov3D_precomp if cov3D_precomp is not None else torch.Tensor([]),
-                self.raster_settings,
-            )
+    def forward(self, means3D, means2D, opacities, shs = None, colors_precomp = None, scales = None, rotations = None, cov3D_precomp = None):
+        
+        raster_settings = self.raster_settings
 
-        # PyTorch Differentiable Fallback Renderer
-        device = means3D.device
-        H = self.raster_settings.image_height
-        W = self.raster_settings.image_width
-        bg = self.raster_settings.bg.to(device)
+        if (shs is None and colors_precomp is None) or (shs is not None and colors_precomp is not None):
+            raise Exception('Please provide excatly one of either SHs or precomputed colors!')
+        
+        if ((scales is None or rotations is None) and cov3D_precomp is None) or ((scales is not None or rotations is not None) and cov3D_precomp is not None):
+            raise Exception('Please provide exactly one of either scale/rotation pair or precomputed 3D covariance!')
+        
+        if shs is None:
+            shs = torch.Tensor([])
+        if colors_precomp is None:
+            colors_precomp = torch.Tensor([])
 
-        N = means3D.shape[0]
-        # Radii estimate in screen space
-        radii = torch.full((N,), 5.0, dtype=torch.float32, device=device)
+        if scales is None:
+            scales = torch.Tensor([])
+        if rotations is None:
+            rotations = torch.Tensor([])
+        if cov3D_precomp is None:
+            cov3D_precomp = torch.Tensor([])
 
-        # Produce a differentiable output connected to parameters
-        param_anchor = (means3D[:1].sum() + opacities[:1].sum()) * 0.0
-        color_image = bg.view(3, 1, 1).expand(3, H, W) + param_anchor
-        inv_depths = torch.zeros(1, H, W, device=device)
+        # Invoke C++/CUDA rasterization routine
+        return rasterize_gaussians(
+            means3D,
+            means2D,
+            shs,
+            colors_precomp,
+            opacities,
+            scales, 
+            rotations,
+            cov3D_precomp,
+            raster_settings, 
+        )
 
-        return color_image, radii, inv_depths
-
-
-__all__ = ["GaussianRasterizationSettings", "GaussianRasterizer"]

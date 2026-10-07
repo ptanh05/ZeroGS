@@ -166,6 +166,9 @@ CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& ch
 	cub::DeviceScan::InclusiveSum(nullptr, geom.scan_size, geom.tiles_touched, geom.tiles_touched, P);
 	obtain(chunk, geom.scanning_space, geom.scan_size, 128);
 	obtain(chunk, geom.point_offsets, P, 128);
+	obtain(chunk, geom.accum_T, P, 128);
+	obtain(chunk, geom.accum_count, P, 128);
+	obtain(chunk, geom.accum_rad_sq, P, 128);
 	return geom;
 }
 
@@ -219,7 +222,10 @@ int CudaRasterizer::Rasterizer::forward(
 	float* depth,
 	bool antialiasing,
 	int* radii,
-	bool debug)
+	bool debug,
+	float* out_mean_T,
+	float* out_depth_var,
+	int* out_vis_count)
 {
 	const float focal_y = height / (2.0f * tan_fovy);
 	const float focal_x = width / (2.0f * tan_fovx);
@@ -320,6 +326,14 @@ int CudaRasterizer::Rasterizer::forward(
 			imgState.ranges);
 	CHECK_CUDA(, debug)
 
+	// ZeroGS: Zero out stats accumulation buffers if stats extraction is active
+	if (out_mean_T != nullptr || out_vis_count != nullptr)
+	{
+		CHECK_CUDA(cudaMemset(geomState.accum_T, 0, P * sizeof(float)), debug);
+		CHECK_CUDA(cudaMemset(geomState.accum_count, 0, P * sizeof(int)), debug);
+		CHECK_CUDA(cudaMemset(geomState.accum_rad_sq, 0, P * sizeof(float)), debug);
+	}
+
 	// Let each tile blend its range of Gaussians independently in parallel
 	const float* feature_ptr = colors_precomp != nullptr ? colors_precomp : geomState.rgb;
 	CHECK_CUDA(FORWARD::render(
@@ -335,7 +349,23 @@ int CudaRasterizer::Rasterizer::forward(
 		background,
 		out_color,
 		geomState.depths,
-		depth), debug)
+		depth,
+		(out_mean_T != nullptr || out_vis_count != nullptr) ? geomState.accum_T : nullptr,
+		(out_mean_T != nullptr || out_vis_count != nullptr) ? geomState.accum_count : nullptr,
+		(out_depth_var != nullptr) ? geomState.accum_rad_sq : nullptr), debug)
+
+	// ZeroGS: Finalize per-Gaussian stats
+	if (out_mean_T != nullptr || out_vis_count != nullptr || out_depth_var != nullptr)
+	{
+		FORWARD::finalizeStats(
+			P,
+			geomState.accum_T,
+			geomState.accum_count,
+			geomState.accum_rad_sq,
+			out_mean_T,
+			out_depth_var,
+			out_vis_count);
+	}
 
 	return num_rendered;
 }

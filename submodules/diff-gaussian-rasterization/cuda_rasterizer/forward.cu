@@ -285,7 +285,10 @@ renderCUDA(
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
 	const float* __restrict__ depths,
-	float* __restrict__ invdepth)
+	float* __restrict__ invdepth,
+	float* __restrict__ accum_T = nullptr,
+	int* __restrict__ accum_count = nullptr,
+	float* __restrict__ accum_rad_sq = nullptr)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -374,6 +377,18 @@ renderCUDA(
 			if(invdepth)
 			expected_invdepth += (1 / depths[collected_id[j]]) * alpha * T;
 
+			// ZeroGS: Extract in-situ transmittance and ray footprint statistics
+			if (accum_T != nullptr && accum_count != nullptr)
+			{
+				int g = collected_id[j];
+				atomicAdd(&accum_T[g], T);
+				atomicAdd(&accum_count[g], 1);
+				if (accum_rad_sq != nullptr)
+				{
+					atomicAdd(&accum_rad_sq[g], d.x * d.x + d.y * d.y);
+				}
+			}
+
 			T = test_T;
 
 			// Keep track of last range entry to update this
@@ -409,7 +424,10 @@ void FORWARD::render(
 	const float* bg_color,
 	float* out_color,
 	float* depths,
-	float* depth)
+	float* depth,
+	float* accum_T,
+	int* accum_count,
+	float* accum_rad_sq)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -423,7 +441,64 @@ void FORWARD::render(
 		bg_color,
 		out_color,
 		depths, 
-		depth);
+		depth,
+		accum_T,
+		accum_count,
+		accum_rad_sq);
+}
+
+__global__ void finalizeStatsCUDA(
+	int P,
+	const float* __restrict__ accum_T,
+	const int* __restrict__ accum_count,
+	const float* __restrict__ accum_rad_sq,
+	float* __restrict__ mean_T,
+	float* __restrict__ depth_var,
+	int* __restrict__ vis_count)
+{
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	if (idx >= P)
+		return;
+
+	int cnt = (accum_count != nullptr) ? accum_count[idx] : 0;
+	if (vis_count != nullptr)
+		vis_count[idx] = cnt;
+
+	if (cnt > 0)
+	{
+		if (mean_T != nullptr)
+			mean_T[idx] = accum_T[idx] / (float)cnt;
+		if (depth_var != nullptr)
+		{
+			if (accum_rad_sq != nullptr)
+				depth_var[idx] = accum_rad_sq[idx] / (float)cnt;
+			else
+				depth_var[idx] = 0.0f;
+		}
+	}
+	else
+	{
+		if (mean_T != nullptr)
+			mean_T[idx] = 1.0f;
+		if (depth_var != nullptr)
+			depth_var[idx] = 0.0f;
+	}
+}
+
+void FORWARD::finalizeStats(
+	int P,
+	const float* accum_T,
+	const int* accum_count,
+	const float* accum_rad_sq,
+	float* mean_T,
+	float* depth_var,
+	int* vis_count)
+{
+	if (P <= 0) return;
+	int block = 256;
+	int grid = (P + block - 1) / block;
+	finalizeStatsCUDA<<<grid, block>>>(
+		P, accum_T, accum_count, accum_rad_sq, mean_T, depth_var, vis_count);
 }
 
 void FORWARD::preprocess(int P, int D, int M,
