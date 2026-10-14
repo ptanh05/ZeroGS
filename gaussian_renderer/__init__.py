@@ -151,27 +151,24 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen).
+    raster_kwargs = {
+        "means3D": means3D,
+        "means2D": means2D,
+        "shs": shs,
+        "colors_precomp": colors_precomp,
+        "opacities": opacity,
+        "scales": scales,
+        "rotations": rotations,
+        "cov3D_precomp": cov3D_precomp,
+    }
     if separate_sh:
-        rasterizer_output = rasterizer(
-            means3D = means3D,
-            means2D = means2D,
-            dc = dc,
-            shs = shs,
-            colors_precomp = colors_precomp,
-            opacities = opacity,
-            scales = scales,
-            rotations = rotations,
-            cov3D_precomp = cov3D_precomp)
-    else:
-        rasterizer_output = rasterizer(
-            means3D = means3D,
-            means2D = means2D,
-            shs = shs,
-            colors_precomp = colors_precomp,
-            opacities = opacity,
-            scales = scales,
-            rotations = rotations,
-            cov3D_precomp = cov3D_precomp)
+        import inspect
+        if "dc" in inspect.signature(rasterizer.forward).parameters:
+            raster_kwargs["dc"] = dc
+        elif dc is not None and shs is not None and colors_precomp is None:
+            raster_kwargs["shs"] = torch.cat([dc, shs], dim=1)
+
+    rasterizer_output = rasterizer(**raster_kwargs)
 
     # Handle different return formats (2, 3, or 6 values)
     mean_T = None

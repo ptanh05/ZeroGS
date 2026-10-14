@@ -353,6 +353,17 @@ class MockGaussianModel:
             "features_rest": self._features_rest.data,
         }
 
+    def save_ply(self, path: str) -> None:
+        import os
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        N = self.get_xyz.shape[0]
+        header = f"ply\nformat ascii 1.0\nelement vertex {N}\nproperty float x\nproperty float y\nproperty float z\nend_header\n"
+        with open(path, "w") as f:
+            f.write(header)
+            xyz = self.get_xyz.detach().cpu().numpy()
+            for i in range(min(N, 100)):
+                f.write(f"{xyz[i,0]} {xyz[i,1]} {xyz[i,2]}\n")
+
     def restore(self, model_params: Dict[str, Any], opt: Any) -> None:
         self._xyz.data = model_params["xyz"]
         self._scaling.data = model_params["scaling"]

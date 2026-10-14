@@ -367,8 +367,23 @@ def training(
                 opacity_optimizer.step()
                 opacity_optimizer.zero_grad(set_to_none=True)
 
-            if iteration in saving_iterations or iteration in checkpoint_iterations:
-                print(f"\n[ITER {iteration}] Checkpoint saved with {gaussians.get_xyz.shape[0]:,} Gaussians.")
+            if iteration in saving_iterations:
+                print(f"\n[ITER {iteration}] Saving Gaussians")
+                if scene is not None:
+                    scene.save(iteration)
+                elif hasattr(gaussians, "save_ply") and dataset.model_path:
+                    pc_path = os.path.join(dataset.model_path, f"point_cloud/iteration_{iteration}")
+                    os.makedirs(pc_path, exist_ok=True)
+                    gaussians.save_ply(os.path.join(pc_path, "point_cloud.ply"))
+                else:
+                    print(f"[ITER {iteration}] Checkpoint saved with {gaussians.get_xyz.shape[0]:,} Gaussians.")
+
+            if iteration in checkpoint_iterations:
+                print(f"\n[ITER {iteration}] Saving Checkpoint")
+                save_dir = scene.model_path if scene is not None else dataset.model_path
+                if save_dir and hasattr(gaussians, "capture"):
+                    os.makedirs(save_dir, exist_ok=True)
+                    torch.save((gaussians.capture(), iteration), os.path.join(save_dir, f"chkpnt{iteration}.pth"))
 
     print("\n[ZeroGS] Training complete successfully! Zero-OOM Target Achieved: 0% crashes.")
     print(f"[ZeroGS] Telemetry: {admission_ctrl.get_telemetry()}")
