@@ -39,9 +39,12 @@ class ParamGroup:
 
     def extract(self, args):
         group = GroupParams()
-        for arg in vars(args).items():
-            if arg[0] in vars(self) or ("_" + arg[0]) in vars(self):
-                setattr(group, arg[0], arg[1])
+        for key, default_val in vars(self).items():
+            clean_key = key[1:] if key.startswith("_") else key
+            val = getattr(args, clean_key, default_val)
+            if val is None and default_val is not None:
+                val = default_val
+            setattr(group, clean_key, val)
         return group
 
 class ModelParams(ParamGroup): 

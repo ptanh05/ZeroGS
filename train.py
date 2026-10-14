@@ -67,6 +67,8 @@ def training(
     if not is_simulation:
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians)
+        with open(os.path.join(scene.model_path, "cfg_args"), "w") as cfg_log_f:
+            cfg_log_f.write(str(Namespace(**vars(dataset))))
         gaussians.training_setup(opt)
         if checkpoint:
             (model_params, first_iter) = torch.load(checkpoint)
