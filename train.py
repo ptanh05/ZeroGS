@@ -67,7 +67,7 @@ def training(
     if not is_simulation:
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians)
-        with open(os.path.join(scene.model_path, "cfg_args"), "w") as cfg_log_f:
+        with open(os.path.join(scene.model_path, "cfg_args"), "w", encoding="utf-8") as cfg_log_f:
             cfg_log_f.write(str(Namespace(**vars(dataset))))
         gaussians.training_setup(opt)
         if checkpoint:
@@ -210,13 +210,33 @@ def training(
         cur_depth_var = render_pkg.get("depth_var", render_pkg.get("depth_variance", None))
         cur_vis_count = render_pkg.get("vis_count", None)
 
-        if cur_vis_count is not None and iteration < opt.densify_until_iter:
-            active_mask = cur_vis_count > 0
-            accum_visibility[active_mask] += cur_vis_count[active_mask]
-            if cur_mean_T is not None:
-                accum_transmittance[active_mask] += cur_mean_T[active_mask]
-            if cur_depth_var is not None:
-                accum_depth_var[active_mask] += cur_depth_var[active_mask]
+        if iteration < opt.densify_until_iter:
+            active_mask = (cur_vis_count > 0) if cur_vis_count is not None else (radii > 0 if radii is not None else visibility_filter)
+            if active_mask is not None and active_mask.numel() > 0:
+                if active_mask.dim() > 1:
+                    active_mask = active_mask.squeeze()
+                vis_inc = cur_vis_count[active_mask] if cur_vis_count is not None else 1
+                accum_visibility[active_mask] += vis_inc
+                if cur_mean_T is not None:
+                    accum_transmittance[active_mask] += cur_mean_T[active_mask]
+                if cur_depth_var is not None:
+                    accum_depth_var[active_mask] += cur_depth_var[active_mask]
+
+                # Update physics stats in Occlusion Engine
+                if hasattr(viewpoint_cam, "world_view_transform"):
+                    R_z = viewpoint_cam.world_view_transform[2, :3].to(device)
+                    t_z = viewpoint_cam.world_view_transform[2, 3].to(device)
+                    view_depths = (gaussians.get_xyz[active_mask] @ R_z) + t_z
+                else:
+                    view_depths = torch.norm(gaussians.get_xyz[active_mask], dim=-1)
+
+                T_vals = cur_mean_T[active_mask] if cur_mean_T is not None else torch.ones_like(view_depths)
+                vis_indices = torch.where(active_mask)[0]
+                occ_engine.update_per_view_stats(
+                    visible_indices=vis_indices,
+                    view_depths=view_depths,
+                    view_transmittance=T_vals,
+                )
 
         # ---------------------------------------------------------------------
         # LOSS & BACKWARD PASS
@@ -247,9 +267,11 @@ def training(
                 progress_bar.close()
 
             # Viewspace gradient norm accumulation
+            # Viewspace gradient norm accumulation
             if visibility_filter is not None and viewspace_point_tensor.grad is not None:
-                viewspace_point_tensor_grad[visibility_filter] += torch.norm(
-                    viewspace_point_tensor.grad[visibility_filter, :2], dim=-1
+                vis_mask = visibility_filter.squeeze() if visibility_filter.dim() > 1 else visibility_filter
+                viewspace_point_tensor_grad[vis_mask] += torch.norm(
+                    viewspace_point_tensor.grad[vis_mask, :2], dim=-1
                 )
 
             # -----------------------------------------------------------------
@@ -257,18 +279,22 @@ def training(
             # -----------------------------------------------------------------
             if iteration > opt.densify_from_iter and iteration < opt.densify_until_iter:
                 if hasattr(gaussians, "max_radii2D") and visibility_filter is not None:
-                    gaussians.max_radii2D[visibility_filter] = torch.max(
-                        gaussians.max_radii2D[visibility_filter], radii[visibility_filter]
+                    vis_mask = visibility_filter.squeeze() if visibility_filter.dim() > 1 else visibility_filter
+                    gaussians.max_radii2D[vis_mask] = torch.max(
+                        gaussians.max_radii2D[vis_mask], radii[vis_mask]
                     )
 
                 if iteration % opt.densification_interval == 0:
                     # a. Compute Occlusion-Aware Demand & Protected Structure Mask (Gap S1)
                     occ_engine.grad_accum = viewspace_point_tensor_grad
                     demand, protected_mask = occ_engine.compute_compensated_demand(scene_extent=scene_extent)
+                    demand = torch.nan_to_num(demand, nan=0.0, posinf=0.0, neginf=0.0)
 
-                    # b. Identify Candidates for Clone & Split
+                    # b. Identify Candidates for Clone & Split (Normalized by Visibility Count)
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    grads_high = viewspace_point_tensor_grad >= opt.densify_grad_threshold
+                    denom = torch.clamp(accum_visibility.float(), min=1.0)
+                    avg_grad = viewspace_point_tensor_grad / denom
+                    grads_high = avg_grad >= opt.densify_grad_threshold
                     scale_limit = opt.percent_dense * scene_extent
 
                     clone_mask = torch.logical_and(
@@ -282,7 +308,7 @@ def training(
 
                     # c. Identify Pruning Candidates (Excluding Protected Structures!)
                     dead_opacity_mask = (gaussians.get_opacity < 0.005).squeeze()
-                    low_utility_threshold = torch.quantile(demand, 0.05)
+                    low_utility_threshold = torch.quantile(demand, 0.05) if demand.numel() > 0 else 0.0
                     prunable_utility = torch.logical_and(demand < low_utility_threshold, ~protected_mask)
 
                     redundant_mask = torch.logical_or(dead_opacity_mask, prunable_utility)
@@ -310,9 +336,14 @@ def training(
                             "required_pre_prune": 0,
                         }
 
+                    dec_action = decision.action if hasattr(decision, "action") else decision["action"]
+                    dec_k_prune = decision.required_pre_prune if hasattr(decision, "required_pre_prune") else decision["required_pre_prune"]
+                    dec_n_clone = decision.n_clone if hasattr(decision, "n_clone") else decision["n_clone"]
+                    dec_n_split = decision.n_split if hasattr(decision, "n_split") else decision["n_split"]
+
                     # e. DETERMINISTIC PRUNE-FIRST (Clear VRAM headroom BEFORE allocating new primitives)
-                    if decision["action"] in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST]:
-                        k_prune = decision["required_pre_prune"]
+                    if dec_action in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST, "PRUNE_FIRST", "SHRINK_AND_PRUNE_FIRST"]:
+                        k_prune = dec_k_prune
                         redundant_indices = torch.where(redundant_mask)[0]
                         if len(redundant_indices) > 0 and k_prune > 0:
                             sorted_by_demand = redundant_indices[torch.argsort(demand[redundant_indices])]
@@ -338,8 +369,8 @@ def training(
                         demand=demand,
                         clone_mask=clone_mask,
                         split_mask=split_mask,
-                        n_clone_quota=decision["n_clone"],
-                        n_split_quota=decision["n_split"],
+                        n_clone_quota=dec_n_clone,
+                        n_split_quota=dec_n_split,
                     )
 
                     # g. Safely Execute Densification (Clone first, then Split)

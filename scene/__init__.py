@@ -71,7 +71,7 @@ class Scene:
                 camlist.extend(scene_info.train_cameras)
             for id, cam in enumerate(camlist):
                 json_cams.append(camera_to_JSON(id, cam))
-            with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
+            with open(os.path.join(self.model_path, "cameras.json"), 'w', encoding="utf-8") as file:
                 json.dump(json_cams, file)
 
         if shuffle:
@@ -102,7 +102,7 @@ class Scene:
             for image_name in self.gaussians.exposure_mapping
         }
 
-        with open(os.path.join(self.model_path, "exposure.json"), "w") as f:
+        with open(os.path.join(self.model_path, "exposure.json"), "w", encoding="utf-8") as f:
             json.dump(exposure_dict, f, indent=2)
 
     def getTrainCameras(self, scale=1.0):

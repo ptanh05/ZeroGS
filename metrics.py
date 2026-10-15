@@ -131,12 +131,12 @@ def main():
 
             # Save json in set directory
             result_json_path = os.path.join(set_dir, "results.json")
-            with open(result_json_path, "w") as f:
+            with open(result_json_path, "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2)
             print(f"    [+] Saved results to: {result_json_path}")
 
     if args.output_file:
-        with open(args.output_file, "w") as f:
+        with open(args.output_file, "w", encoding="utf-8") as f:
             json.dump(overall_results, f, indent=2)
         print(f"\n[+] Master results written to: {args.output_file}")
 
