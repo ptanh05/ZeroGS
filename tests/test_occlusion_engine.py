@@ -4,7 +4,11 @@ Unit tests for OcclusionAwareEngine and OcclusionAwareDemandEstimator (Module 4)
 
 import torch
 import pytest
-from zerogs.occlusion_engine import OcclusionAwareEngine, OcclusionAwareDemandEstimator
+from zerogs.occlusion_engine import (
+    OcclusionAwareEngine,
+    OcclusionAwareDemandEstimator,
+    bottom_utility_mask,
+)
 
 
 def test_occlusion_engine_stats_and_protected_mask():
@@ -60,3 +64,62 @@ def test_stateless_demand_estimator():
     assert demand[9] > demand[0]
     # Clone gain should be roughly 2x split gain due to byte cost difference
     assert gain_clone[0] > gain_split[0]
+
+
+def test_native_within_view_depth_variance_affects_protection():
+    engine = OcclusionAwareEngine(num_gaussians=2, gamma_occ=0.35, device="cpu")
+    indices = torch.tensor([0, 1])
+    engine.update_per_view_stats(
+        indices,
+        torch.tensor([2.0, 2.0]),
+        torch.tensor([0.1, 0.1]),
+        view_depth_variance=torch.tensor([1.0, 0.0]),
+    )
+    engine.grad_accum = torch.ones(2)
+    demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    assert protected.tolist() == [True, False]
+    assert demand[0] > demand[1]
+
+
+def test_unobserved_gaussians_have_zero_demand_and_are_not_protected():
+    engine = OcclusionAwareEngine(num_gaussians=3, device="cpu")
+    engine.update_per_view_stats(
+        torch.tensor([0]),
+        torch.tensor([1.0]),
+        torch.tensor([0.1]),
+        view_depth_variance=torch.tensor([1.0]),
+    )
+    engine.grad_accum = torch.ones(3)
+    demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    assert demand[1:].tolist() == [0.0, 0.0]
+    assert protected[1:].tolist() == [False, False]
+
+
+def test_bottom_utility_mask_selects_exact_count_and_respects_protection():
+    demand = torch.tensor([0.0, 0.0, 1.0, 2.0, 3.0])
+    protected = torch.tensor([True, False, False, False, False])
+    selected = bottom_utility_mask(demand, protected, fraction=0.4)
+    assert selected.sum().item() == 2
+    assert selected.tolist() == [False, True, True, False, False]
+
+
+@pytest.mark.parametrize("mode", ["full", "transmittance_only", "depth_only", "none"])
+def test_occlusion_ablation_modes_are_supported(mode):
+    engine = OcclusionAwareEngine(
+        num_gaussians=2,
+        gamma_occ=0.35,
+        occlusion_mode=mode,
+        enable_structure_protection=True,
+        device="cpu",
+    )
+    engine.update_per_view_stats(
+        torch.tensor([0, 1]),
+        torch.tensor([1.0, 1.0]),
+        torch.tensor([0.1, 0.9]),
+        torch.tensor([1.0, 0.0]),
+    )
+    engine.grad_accum = torch.ones(2)
+    demand, protected = engine.compute_compensated_demand(10.0)
+    assert torch.isfinite(demand).all()
+    if mode == "none":
+        assert protected.sum().item() == 0

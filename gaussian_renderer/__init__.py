@@ -11,9 +11,37 @@
 
 import torch
 import math
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization import (
+    GaussianRasterizationSettings,
+    GaussianRasterizer,
+    last_rasterization_used_native_stats,
+)
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
+
+
+def validate_physical_stats(mean_T, depth_var, vis_count, num_gaussians):
+    """Validate native per-Gaussian statistics before research code consumes them."""
+    stats = {
+        "mean_T": mean_T,
+        "depth_var": depth_var,
+        "vis_count": vis_count,
+    }
+    for name, value in stats.items():
+        if value is None:
+            raise RuntimeError(f"CUDA rasterizer did not return required statistic: {name}")
+        if value.ndim != 1 or value.shape[0] != num_gaussians:
+            raise RuntimeError(
+                f"Invalid {name} shape {tuple(value.shape)}; expected ({num_gaussians},)"
+            )
+        if not torch.isfinite(value.float()).all():
+            raise RuntimeError(f"CUDA rasterizer returned non-finite values in {name}")
+    if torch.any(mean_T < 0) or torch.any(mean_T > 1):
+        raise RuntimeError("mean_T must be bounded in [0, 1]")
+    if torch.any(depth_var < 0):
+        raise RuntimeError("depth_var must be non-negative")
+    if torch.any(vis_count < 0):
+        raise RuntimeError("vis_count must be non-negative")
 
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False, use_opacity_network=False, opacity_network=None, use_antialiasing=False):
     """
@@ -169,6 +197,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             raster_kwargs["shs"] = torch.cat([dc, shs], dim=1)
 
     rasterizer_output = rasterizer(**raster_kwargs)
+    stats_available = last_rasterization_used_native_stats()
 
     # Handle different return formats (2, 3, or 6 values)
     mean_T = None
@@ -181,6 +210,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         rendered_image, radii, depth_image = rasterizer_output
     else:
         rendered_image, radii, depth_image, mean_T, depth_var, vis_count = rasterizer_output[:6]
+    if stats_available:
+        validate_physical_stats(mean_T, depth_var, vis_count, means3D.shape[0])
         
     # Apply exposure to rendered image (training only)
     if use_trained_exp:
@@ -199,6 +230,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         "mean_T": mean_T,
         "depth_var": depth_var,
         "vis_count": vis_count,
+        "stats_available": stats_available,
     }
     
     return out

@@ -16,6 +16,12 @@ from . import _C  # type: ignore
 
 # Optional fused optimizer (present in specialized/accelerated rasterizer builds)
 SparseGaussianAdam = getattr(_C, "SparseGaussianAdam", None)
+_LAST_STATS_NATIVE = False
+
+
+def last_rasterization_used_native_stats():
+    """Whether the most recent forward received physical stats from CUDA."""
+    return _LAST_STATS_NATIVE
 
 def cpu_deep_copy_tuple(input_tuple):
     copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
@@ -84,13 +90,16 @@ class _RasterizeGaussians(torch.autograd.Function):
         )
 
         # Invoke C++/CUDA rasterizer
+        global _LAST_STATS_NATIVE
         ret = _C.rasterize_gaussians(*args)
         if len(ret) == 7:
+            _LAST_STATS_NATIVE = False
             num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer, invdepths = ret
             mean_T = torch.ones_like(radii, dtype=torch.float32)
             depth_var = torch.zeros_like(radii, dtype=torch.float32)
             vis_count = torch.zeros_like(radii, dtype=torch.int32)
         else:
+            _LAST_STATS_NATIVE = True
             num_rendered, color, radii, geomBuffer, binningBuffer, imgBuffer, invdepths, mean_T, depth_var, vis_count = ret
 
         # Keep relevant tensors for backward
