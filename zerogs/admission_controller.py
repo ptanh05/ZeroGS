@@ -14,6 +14,11 @@ from typing import Dict, Any, Optional
 import torch
 
 from .cost_model import ByteCostModel
+from .memory_telemetry import capture_cuda_memory
+
+
+class VramBudgetExceededError(RuntimeError):
+    """Raised when the existing workload already exceeds the effective budget."""
 
 
 class AdmissionAction(str, Enum):
@@ -30,6 +35,7 @@ class AdmissionDecision:
     n_split: int
     required_pre_prune: int
     transient_cost_bytes: int
+    mutation_budget_bytes: int
     available_headroom_bytes: int
     freed_bytes: int
     stats: Dict[str, Any]
@@ -42,6 +48,7 @@ class AdmissionDecision:
             "n_split": self.n_split,
             "required_pre_prune": self.required_pre_prune,
             "transient_cost_mb": round(self.transient_cost_bytes / (1024**2), 2),
+            "mutation_budget_mb": round(self.mutation_budget_bytes / (1024**2), 2),
             "available_headroom_mb": round(self.available_headroom_bytes / (1024**2), 2),
             "freed_mb": round(self.freed_bytes / (1024**2), 2),
             "stats": self.stats,
@@ -62,6 +69,7 @@ class AdmissionController:
         cost_model: ByteCostModel,
         hard_vram_limit_mb: Optional[float] = None,
         safety_headroom_mb: float = 512.0,
+        non_pytorch_allowance_mb: float = 0.0,
         enable_deterministic_prune_first: bool = True,
     ):
         """
@@ -73,6 +81,7 @@ class AdmissionController:
         """
         self.cost_model = cost_model
         self.safety_headroom_mb = safety_headroom_mb
+        self.non_pytorch_allowance_mb = non_pytorch_allowance_mb
         self.enable_deterministic_prune_first = enable_deterministic_prune_first
 
         if hard_vram_limit_mb is not None:
@@ -86,6 +95,7 @@ class AdmissionController:
 
         self.hard_vram_limit_bytes = int(self.hard_vram_limit_mb * 1024 * 1024)
         self.safety_headroom_bytes = int(self.safety_headroom_mb * 1024 * 1024)
+        self.non_pytorch_allowance_bytes = int(self.non_pytorch_allowance_mb * 1024 * 1024)
         self.effective_budget_bytes = max(
             0, self.hard_vram_limit_bytes - self.safety_headroom_bytes
         )
@@ -97,10 +107,21 @@ class AdmissionController:
         self.total_pruned_via_admission = 0
 
     def get_current_vram_allocated_bytes(self) -> int:
-        """Returns currently allocated GPU memory in bytes."""
-        if torch.cuda.is_available():
-            return int(torch.cuda.memory_allocated())
-        return 0
+        """Return a conservative allocator footprint (reserved >= allocated)."""
+        return capture_cuda_memory().conservative_footprint_bytes
+
+    def assert_current_memory_within_budget(self) -> Dict[str, Any]:
+        """Fail when forward/backward itself violates the configured budget."""
+        snapshot = capture_cuda_memory()
+        footprint = snapshot.conservative_footprint_bytes + self.non_pytorch_allowance_bytes
+        if footprint > self.hard_vram_limit_bytes:
+            raise VramBudgetExceededError(
+                "Current CUDA footprint exceeds the hard VRAM budget before mutation: "
+                f"footprint={footprint / 1024**2:.2f}MB, "
+                f"hard_budget={self.hard_vram_limit_bytes / 1024**2:.2f}MB "
+                f"(hard={self.hard_vram_limit_mb:.2f}MB, safety={self.safety_headroom_mb:.2f}MB)."
+            )
+        return snapshot.to_dict()
 
     def evaluate_admission(
         self,
@@ -109,6 +130,7 @@ class AdmissionController:
         current_num_gaussians: int,
         prune_candidates_count: int,
         current_allocated_bytes: Optional[int] = None,
+        current_reserved_bytes: Optional[int] = None,
     ) -> AdmissionDecision:
         """
         Evaluates proposed mutation request against active hardware memory headroom.
@@ -120,15 +142,29 @@ class AdmissionController:
             prune_candidates_count: Number of redundant/low-utility Gaussians identified.
             current_allocated_bytes: Optional override for allocated memory (useful for tests).
         """
+        if min(n_clone_requested, n_split_requested, current_num_gaussians, prune_candidates_count) < 0:
+            raise ValueError("Admission counts must be non-negative")
         self.total_evaluations += 1
 
         if current_allocated_bytes is None:
-            current_allocated = self.get_current_vram_allocated_bytes()
+            snapshot = capture_cuda_memory()
+            current_allocated = snapshot.allocated_bytes
+            current_reserved = snapshot.reserved_bytes
         else:
             current_allocated = current_allocated_bytes
+            current_reserved = (
+                current_allocated_bytes
+                if current_reserved_bytes is None
+                else current_reserved_bytes
+            )
+
+        current_footprint = (
+            max(current_allocated, current_reserved)
+            + self.non_pytorch_allowance_bytes
+        )
 
         # Available headroom before hitting hard budget (accounting for safety zone)
-        available_headroom = max(0, self.effective_budget_bytes - current_allocated)
+        available_headroom = max(0, self.effective_budget_bytes - current_footprint)
 
         # Transient memory required by the proposed mutation
         transient_cost = self.cost_model.estimate_transient_bytes(
@@ -145,10 +181,13 @@ class AdmissionController:
                 n_split=n_split_requested,
                 required_pre_prune=0,
                 transient_cost_bytes=transient_cost,
+                mutation_budget_bytes=transient_cost,
                 available_headroom_bytes=available_headroom,
                 freed_bytes=0,
                 stats={
                     "current_allocated_mb": round(current_allocated / (1024**2), 2),
+                    "current_reserved_mb": round(current_reserved / (1024**2), 2),
+                    "current_footprint_mb": round(current_footprint / (1024**2), 2),
                     "headroom_mb": round(available_headroom / (1024**2), 2),
                     "transient_cost_mb": round(transient_cost / (1024**2), 2),
                     "reason": "Sufficient headroom available",
@@ -179,10 +218,13 @@ class AdmissionController:
                 n_split=n_split_requested,
                 required_pre_prune=required_pre_prune,
                 transient_cost_bytes=transient_cost,
+                mutation_budget_bytes=transient_cost,
                 available_headroom_bytes=available_headroom,
                 freed_bytes=freed_bytes,
                 stats={
                     "current_allocated_mb": round(current_allocated / (1024**2), 2),
+                    "current_reserved_mb": round(current_reserved / (1024**2), 2),
+                    "current_footprint_mb": round(current_footprint / (1024**2), 2),
                     "headroom_mb": round(available_headroom / (1024**2), 2),
                     "transient_cost_mb": round(transient_cost / (1024**2), 2),
                     "freed_mb": round(freed_bytes / (1024**2), 2),
@@ -207,28 +249,43 @@ class AdmissionController:
                 n_split=0,
                 required_pre_prune=prune_candidates_count,
                 transient_cost_bytes=0,
+                mutation_budget_bytes=0,
                 available_headroom_bytes=available_headroom,
                 freed_bytes=freed_bytes,
                 stats={
                     "current_allocated_mb": round(current_allocated / (1024**2), 2),
+                    "current_reserved_mb": round(current_reserved / (1024**2), 2),
+                    "current_footprint_mb": round(current_footprint / (1024**2), 2),
                     "headroom_mb": round(available_headroom / (1024**2), 2),
                     "reason": "Hard VRAM budget reached; mutated batch rejected; cleaning garbage",
                 },
             )
 
-        # Proportional scale factor for batch shrinking
-        usable_budget = admitted_budget_bytes - self.cost_model.cuda_padding_bytes
-        scale_ratio = max(0.0, min(1.0, float(usable_budget / max(1, transient_cost))))
-
-        n_clone_admitted = int(math.floor(n_clone_requested * scale_ratio))
-        n_split_admitted = int(math.floor(n_split_requested * scale_ratio))
-
-        # Re-verify scaled cost
-        scaled_transient_cost = self.cost_model.estimate_transient_bytes(
-            n_clone=n_clone_admitted,
-            n_split=n_split_admitted,
-            include_padding=True,
-        )
+        # Binary-search a proportional request that really fits. A direct ratio
+        # is unsafe because clone/split fixed overhead makes the cost affine,
+        # not linear in primitive count.
+        low, high = 0.0, 1.0
+        n_clone_admitted = 0
+        n_split_admitted = 0
+        scaled_transient_cost = 0
+        scale_ratio = 0.0
+        for _ in range(32):
+            candidate_ratio = (low + high) / 2.0
+            candidate_clone = int(math.floor(n_clone_requested * candidate_ratio))
+            candidate_split = int(math.floor(n_split_requested * candidate_ratio))
+            candidate_cost = self.cost_model.estimate_transient_bytes(
+                n_clone=candidate_clone,
+                n_split=candidate_split,
+                include_padding=True,
+            )
+            if candidate_cost <= admitted_budget_bytes:
+                low = candidate_ratio
+                scale_ratio = candidate_ratio
+                n_clone_admitted = candidate_clone
+                n_split_admitted = candidate_split
+                scaled_transient_cost = candidate_cost
+            else:
+                high = candidate_ratio
 
         return AdmissionDecision(
             action=AdmissionAction.SHRINK_AND_PRUNE_FIRST,
@@ -236,10 +293,13 @@ class AdmissionController:
             n_split=n_split_admitted,
             required_pre_prune=prune_candidates_count,
             transient_cost_bytes=scaled_transient_cost,
+            mutation_budget_bytes=admitted_budget_bytes,
             available_headroom_bytes=available_headroom,
             freed_bytes=freed_bytes,
             stats={
                 "current_allocated_mb": round(current_allocated / (1024**2), 2),
+                "current_reserved_mb": round(current_reserved / (1024**2), 2),
+                "current_footprint_mb": round(current_footprint / (1024**2), 2),
                 "headroom_mb": round(available_headroom / (1024**2), 2),
                 "scale_ratio": round(scale_ratio, 4),
                 "original_clone": n_clone_requested,
@@ -258,4 +318,5 @@ class AdmissionController:
             "total_pruned_via_admission": self.total_pruned_via_admission,
             "hard_vram_limit_mb": self.hard_vram_limit_mb,
             "safety_headroom_mb": self.safety_headroom_mb,
+            "non_pytorch_allowance_mb": self.non_pytorch_allowance_mb,
         }

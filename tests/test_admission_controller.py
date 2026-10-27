@@ -90,3 +90,9 @@ def test_admission_shrink_and_prune_first_on_saturation():
     assert decision.required_pre_prune == 1000
     assert decision.n_clone < 50000
     assert decision.n_split < 50000
+    assert decision.transient_cost_bytes <= (
+        decision.available_headroom_bytes + decision.freed_bytes
+    )
+    assert decision.mutation_budget_bytes == (
+        decision.available_headroom_bytes + decision.freed_bytes
+    )
