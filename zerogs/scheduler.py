@@ -11,7 +11,7 @@ import torch
 
 from .cost_model import ByteCostModel
 from .admission_controller import AdmissionController, AdmissionAction, AdmissionDecision
-from .occlusion_engine import OcclusionAwareEngine
+from .occlusion_engine import OcclusionAwareEngine, bottom_utility_mask
 from .marginal_allocator import MarginalUtilityAllocator
 
 
@@ -34,10 +34,20 @@ class MemoryBoundedDensificationScheduler:
         transmittance_tau: float = 0.25,
         clone_multiplier: float = 1.15,
         split_multiplier: float = 2.30,
+        require_native_stats: bool = True,
+        occlusion_mode: str = "full",
+        enable_structure_protection: bool = True,
+        allocator_strategy: str = "gain_per_byte",
+        gaussians_per_cycle_cap: int = 5000,
+        max_gaussians_cap: int = 1_000_000,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         self.device = device
         self.sh_degree = sh_degree
+        self.require_native_stats = require_native_stats
+        self.allocator_strategy = allocator_strategy
+        self.gaussians_per_cycle_cap = gaussians_per_cycle_cap
+        self.max_gaussians_cap = max_gaussians_cap
 
         # 1. Byte Cost Model
         self.cost_model = ByteCostModel(
@@ -59,6 +69,8 @@ class MemoryBoundedDensificationScheduler:
             num_gaussians=num_gaussians,
             gamma_occ=gamma_occ,
             transmittance_tau=transmittance_tau,
+            occlusion_mode=occlusion_mode,
+            enable_structure_protection=enable_structure_protection,
             device=device,
         )
 
@@ -78,6 +90,12 @@ class MemoryBoundedDensificationScheduler:
         Extracts view depth and transmittance statistics from render package.
         Supports custom CUDA rasterizer tensors or fallback estimates.
         """
+        if self.require_native_stats and not bool(render_pkg.get("stats_available", False)):
+            raise RuntimeError(
+                "Occlusion-aware scheduling requires native rasterizer statistics. "
+                "Rebuild the ZeroGS CUDA extension; synthetic fallback statistics "
+                "must not be used for research runs."
+            )
         visibility_filter = render_pkg.get("visibility_filter", None)
         if visibility_filter is None or visibility_filter.sum() == 0:
             return
@@ -85,14 +103,15 @@ class MemoryBoundedDensificationScheduler:
         vis_indices = torch.where(visibility_filter)[0]
         radii = render_pkg.get("radii", None)
 
-        # Retrieve or synthesize mean transmittance
+        # Retrieve native mean transmittance. Missing values are invalid because
+        # a T=1 fallback silently disables occlusion compensation.
         mean_T = render_pkg.get("mean_transmittance", None)
         if mean_T is None:
             mean_T = render_pkg.get("mean_T", None)
-        if mean_T is None and radii is not None:
+        if mean_T is None and self.require_native_stats:
+            raise RuntimeError("Render package declares stats_available but mean_T is missing")
+        if mean_T is None:
             mean_T = torch.ones_like(radii, dtype=torch.float32)
-        elif mean_T is None:
-            mean_T = torch.ones(gaussians.get_xyz.shape[0], dtype=torch.float32, device=self.device)
 
         # Compute camera view depth: (world_view_transform[2, :3] @ xyz.T) + world_view_transform[2, 3]
         if hasattr(viewpoint_cam, "world_view_transform"):
@@ -106,6 +125,11 @@ class MemoryBoundedDensificationScheduler:
             visible_indices=vis_indices,
             view_depths=view_depths,
             view_transmittance=mean_T[vis_indices],
+            view_depth_variance=(
+                render_pkg["depth_var"][vis_indices]
+                if render_pkg.get("depth_var") is not None
+                else None
+            ),
         )
 
     def record_backward_stats(
@@ -152,8 +176,7 @@ class MemoryBoundedDensificationScheduler:
 
         # 3. Identify Redundant Prune candidates
         dead_opacity_mask = (gaussians.get_opacity < min_opacity_prune).squeeze()
-        low_utility_threshold = torch.quantile(demand, 0.05)
-        prunable_utility = torch.logical_and(demand < low_utility_threshold, ~protected_mask)
+        prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
 
         redundant_mask = torch.logical_or(dead_opacity_mask, prunable_utility)
         if size_threshold is not None and hasattr(gaussians, "max_radii2D"):
@@ -197,12 +220,16 @@ class MemoryBoundedDensificationScheduler:
                 demand = demand[surviving]
 
         # 6. Marginal Utility Allocation
-        final_clone_mask, final_split_mask = self.allocator.allocate(
+        final_clone_mask, final_split_mask = self.allocator.joint_knapsack_allocate(
             demand=demand,
             clone_mask=clone_mask,
             split_mask=split_mask,
-            n_clone_quota=decision.n_clone,
-            n_split_quota=decision.n_split,
+            max_transient_bytes=decision.mutation_budget_bytes,
+            strategy=self.allocator_strategy,
+            max_items=min(
+                self.gaussians_per_cycle_cap,
+                max(0, self.max_gaussians_cap - int(gaussians.get_xyz.shape[0])),
+            ),
         )
 
         # 7. Safe Execution of Densification (Clone first, then Split)

@@ -11,10 +11,16 @@ Main Modules:
 """
 
 from .cost_model import ByteCostModel
-from .admission_controller import AdmissionController, AdmissionDecision, AdmissionAction
-from .occlusion_engine import OcclusionAwareEngine, OcclusionAwareDemandEstimator
+from .admission_controller import (
+    AdmissionController,
+    AdmissionDecision,
+    AdmissionAction,
+    VramBudgetExceededError,
+)
+from .occlusion_engine import OcclusionAwareEngine, OcclusionAwareDemandEstimator, bottom_utility_mask
 from .marginal_allocator import MarginalUtilityAllocator
 from .scheduler import MemoryBoundedDensificationScheduler
+from .memory_telemetry import CudaMemorySnapshot, JsonlTelemetryWriter, capture_cuda_memory
 
 __version__ = "1.0.0"
 __author__ = "Phung The Anh"
@@ -24,8 +30,13 @@ __all__ = [
     "AdmissionController",
     "AdmissionDecision",
     "AdmissionAction",
+    "VramBudgetExceededError",
     "OcclusionAwareEngine",
     "OcclusionAwareDemandEstimator",
+    "bottom_utility_mask",
     "MarginalUtilityAllocator",
     "MemoryBoundedDensificationScheduler",
+    "CudaMemorySnapshot",
+    "JsonlTelemetryWriter",
+    "capture_cuda_memory",
 ]

@@ -92,6 +92,9 @@ class MarginalUtilityAllocator:
         clone_mask: torch.Tensor,
         split_mask: torch.Tensor,
         max_transient_bytes: int,
+        strategy: str = "gain_per_byte",
+        generator: torch.Generator = None,
+        max_items: int = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Jointly allocates across both Clone and Split pools using greedy Knapsack
@@ -110,9 +113,23 @@ class MarginalUtilityAllocator:
             * self.cost_model.split_multiplier
         )
 
-        # Compute marginal utilities
-        clone_lambdas = demand[clone_indices] / max(1.0, float(cost_clone))
-        split_lambdas = demand[split_indices] / max(1.0, float(cost_split))
+        if strategy == "gain_per_byte":
+            clone_lambdas = demand[clone_indices] / max(1.0, float(cost_clone))
+            split_lambdas = demand[split_indices] / max(1.0, float(cost_split))
+        elif strategy == "demand_only":
+            clone_lambdas = demand[clone_indices]
+            split_lambdas = demand[split_indices]
+        elif strategy == "random":
+            clone_lambdas = torch.rand(
+                len(clone_indices), device=device, generator=generator
+            )
+            split_lambdas = torch.rand(
+                len(split_indices), device=device, generator=generator
+            )
+        else:
+            raise ValueError(
+                f"Unknown allocator strategy {strategy!r}; expected gain_per_byte, demand_only, or random"
+            )
 
         # Bundle items: (lambda, item_type, index, cost)
         # item_type: 0 for clone, 1 for split
@@ -128,15 +145,33 @@ class MarginalUtilityAllocator:
         final_clone_mask = torch.zeros_like(clone_mask, dtype=torch.bool, device=device)
         final_split_mask = torch.zeros_like(split_mask, dtype=torch.bool, device=device)
 
-        remaining_bytes = max_transient_bytes
+        remaining_bytes = max(0, int(max_transient_bytes))
+        selected_types = set()
+        selected_any = False
+        selected_count = 0
         for lam, itype, idx, cost in items:
-            if cost <= remaining_bytes:
-                remaining_bytes -= cost
+            if max_items is not None and selected_count >= max(0, int(max_items)):
+                break
+            operation_overhead = 0
+            if not selected_any:
+                operation_overhead += self.cost_model.cuda_padding_bytes
+            if itype not in selected_types:
+                operation_overhead += (
+                    self.cost_model.clone_fixed_overhead_bytes
+                    if itype == 0
+                    else self.cost_model.split_fixed_overhead_bytes
+                )
+            actual_cost = cost + operation_overhead
+            if actual_cost <= remaining_bytes:
+                remaining_bytes -= actual_cost
                 if itype == 0:
                     final_clone_mask[idx] = True
                 else:
                     final_split_mask[idx] = True
-            if remaining_bytes <= min(cost_clone, cost_split):
+                selected_types.add(itype)
+                selected_any = True
+                selected_count += 1
+            if remaining_bytes < min(cost_clone, cost_split):
                 break
 
         return final_clone_mask, final_split_mask

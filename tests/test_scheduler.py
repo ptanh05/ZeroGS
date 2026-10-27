@@ -19,6 +19,7 @@ def test_scheduler_end_to_end_mutation_cycle():
         sh_degree=3,
         hard_vram_limit_mb=8192.0,
         safety_headroom_mb=512.0,
+        require_native_stats=False,
         device=device,
     )
 
