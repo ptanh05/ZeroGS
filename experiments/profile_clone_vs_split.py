@@ -17,6 +17,8 @@ import sys
 import json
 import gc
 import torch
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from typing import Dict, Any, List
 
@@ -160,6 +162,35 @@ def run_experiment_0(
         }, f, indent=2)
     print(f"\n[+] Results saved to: {summary_path}")
 
+    # Fit a device-specific affine calibration. The intercept captures fixed
+    # tensor/allocator overhead that a multiplier-only model cannot represent.
+    validation_model = ByteCostModel(sh_degree=3)
+    validation_model.fit_profile_results(results[:-1])
+    held_out_error = validation_model.profile_error(results[-1:])
+    fitted = cost_model.fit_profile_results(results)
+    fitted_error = cost_model.profile_error(results)
+    calibration_path = os.path.join(output_dir, "cost_calibration.json")
+    with open(calibration_path, "w", encoding="utf-8") as f:
+        json.dump(
+            cost_model.calibration_dict(
+                metadata={
+                    "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
+                    "torch": torch.__version__,
+                    "cuda": torch.version.cuda,
+                    "n_base": n_base,
+                    "source": summary_path,
+                    "held_out_largest_batch_error": held_out_error,
+                    "fitted_profile_error": fitted_error,
+                }
+            ),
+            f,
+            indent=2,
+        )
+    print(f"[+] Fitted calibration saved to: {calibration_path}")
+    print(f"[+] Fitted parameters: {fitted}")
+    print(f"[+] Held-out largest-batch error: {held_out_error}")
+    print(f"[+] Full-profile error: {fitted_error}")
+
     # Generate Publication Figure
     plot_path = os.path.join(output_dir, "experiment_0_transient_spikes.png")
     delta_ns = [r["delta_n"] / 1000 for r in results]
@@ -192,7 +223,12 @@ def run_experiment_0(
     plt.close()
     print(f"[+] Publication chart saved to: {plot_path}")
 
-    return {"results": results, "summary_path": summary_path, "plot_path": plot_path}
+    return {
+        "results": results,
+        "summary_path": summary_path,
+        "calibration_path": calibration_path,
+        "plot_path": plot_path,
+    }
 
 
 if __name__ == "__main__":

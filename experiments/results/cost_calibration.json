@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "sh_degree": 3,
+  "bytes_per_float": 4,
+  "use_adam": true,
+  "clone_multiplier": 1.204583869941197,
+  "split_multiplier": 2.573835157384988,
+  "clone_fixed_overhead_bytes": 60231489,
+  "split_fixed_overhead_bytes": 124401559,
+  "cuda_padding_bytes": 1048576,
+  "metadata": {
+    "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "n_base": 100000,
+    "source": "experiments/results\\experiment_0_results.json",
+    "held_out_largest_batch_error": {
+      "clone_mape_pct": 1.914104831776336,
+      "split_mape_pct": 5.234386150736664,
+      "combined_mape_pct": 3.5742454912565003
+    },
+    "fitted_profile_error": {
+      "clone_mape_pct": 0.4945939804281047,
+      "split_mape_pct": 1.3719137657435532,
+      "combined_mape_pct": 0.933253873085829
+    }
+  }
+}

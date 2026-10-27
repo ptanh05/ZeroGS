@@ -3,6 +3,7 @@ Unit tests for ByteCostModel (Module 1).
 """
 
 import pytest
+import json
 from zerogs.cost_model import ByteCostModel
 
 
@@ -46,3 +47,26 @@ def test_prune_freed_bytes():
     n_prune = 5000
     freed = model.estimate_prune_freed_bytes(n_prune)
     assert freed == 5000 * 944
+
+
+def test_affine_calibration_fits_fixed_and_variable_cost(tmp_path):
+    model = ByteCostModel(sh_degree=3, cuda_padding_bytes=0)
+    persistent = model.persistent_bytes_per_gaussian
+    rows = []
+    for count in (10_000, 20_000, 40_000):
+        rows.append({
+            "delta_n": count,
+            "clone_spike_mb": (8 * 1024**2 + count * persistent * 1.25) / 1024**2,
+            "split_spike_mb": (16 * 1024**2 + count * persistent * 2.5) / 1024**2,
+        })
+    fitted = model.fit_profile_results(rows)
+    assert fitted["clone_multiplier"] == pytest.approx(1.25)
+    assert fitted["split_multiplier"] == pytest.approx(2.5)
+    assert fitted["clone_fixed_overhead_bytes"] == pytest.approx(8 * 1024**2, abs=2)
+    assert fitted["split_fixed_overhead_bytes"] == pytest.approx(16 * 1024**2, abs=2)
+    assert model.profile_error(rows)["combined_mape_pct"] == pytest.approx(0.0, abs=1e-5)
+
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(model.calibration_dict()), encoding="utf-8")
+    restored = ByteCostModel.from_calibration_file(str(path))
+    assert restored.estimate_transient_bytes(10_000, 0, False) == model.estimate_transient_bytes(10_000, 0, False)

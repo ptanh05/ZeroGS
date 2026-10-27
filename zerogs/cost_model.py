@@ -10,6 +10,7 @@ Gaussian mutation (Clone vs Split), taking into account:
 """
 
 from typing import Dict, Any, Optional
+import json
 import torch
 
 
@@ -29,6 +30,8 @@ class ByteCostModel:
         clone_multiplier: float = 1.15,
         split_multiplier: float = 2.30,
         cuda_padding_bytes: int = 1024 * 1024,  # 1MB CUDA block padding
+        clone_fixed_overhead_bytes: int = 0,
+        split_fixed_overhead_bytes: int = 0,
     ):
         """
         Args:
@@ -45,6 +48,8 @@ class ByteCostModel:
         self.clone_multiplier = clone_multiplier
         self.split_multiplier = split_multiplier
         self.cuda_padding_bytes = cuda_padding_bytes
+        self.clone_fixed_overhead_bytes = int(clone_fixed_overhead_bytes)
+        self.split_fixed_overhead_bytes = int(split_fixed_overhead_bytes)
 
         self.recalculate_constants()
 
@@ -105,6 +110,10 @@ class ByteCostModel:
 
         clone_bytes = n_clone * self.persistent_bytes_per_gaussian * self.clone_multiplier
         split_bytes = n_split * self.persistent_bytes_per_gaussian * self.split_multiplier
+        if n_clone > 0:
+            clone_bytes += self.clone_fixed_overhead_bytes
+        if n_split > 0:
+            split_bytes += self.split_fixed_overhead_bytes
         total = clone_bytes + split_bytes
 
         if include_padding and (n_clone > 0 or n_split > 0):
@@ -139,6 +148,98 @@ class ByteCostModel:
             unit_bytes = delta_n_split * self.persistent_bytes_per_gaussian
             self.split_multiplier = max(1.5, float(measured_split_spike_bytes / unit_bytes))
 
+    @staticmethod
+    def _fit_affine_cost(counts, measured_bytes):
+        """Least-squares fit y = intercept + slope*x without extra dependencies."""
+        if len(counts) != len(measured_bytes) or len(counts) < 2:
+            raise ValueError("At least two matched profiling samples are required")
+        x_mean = sum(float(x) for x in counts) / len(counts)
+        y_mean = sum(float(y) for y in measured_bytes) / len(measured_bytes)
+        denominator = sum((float(x) - x_mean) ** 2 for x in counts)
+        if denominator <= 0:
+            raise ValueError("Profiling samples must use at least two mutation sizes")
+        slope = sum(
+            (float(x) - x_mean) * (float(y) - y_mean)
+            for x, y in zip(counts, measured_bytes)
+        ) / denominator
+        intercept = y_mean - slope * x_mean
+        return max(0.0, intercept), max(0.0, slope)
+
+    def fit_profile_results(self, results) -> Dict[str, float]:
+        """Fit per-operation fixed overhead and per-Gaussian multipliers."""
+        counts = [int(row["delta_n"]) for row in results]
+        clone_bytes = [
+            max(0.0, float(row["clone_spike_mb"]) * 1024**2 - self.cuda_padding_bytes)
+            for row in results
+        ]
+        split_bytes = [
+            max(0.0, float(row["split_spike_mb"]) * 1024**2 - self.cuda_padding_bytes)
+            for row in results
+        ]
+        clone_intercept, clone_slope = self._fit_affine_cost(counts, clone_bytes)
+        split_intercept, split_slope = self._fit_affine_cost(counts, split_bytes)
+        self.clone_fixed_overhead_bytes = int(round(clone_intercept))
+        self.split_fixed_overhead_bytes = int(round(split_intercept))
+        self.clone_multiplier = clone_slope / self.persistent_bytes_per_gaussian
+        self.split_multiplier = split_slope / self.persistent_bytes_per_gaussian
+        return {
+            "clone_multiplier": self.clone_multiplier,
+            "split_multiplier": self.split_multiplier,
+            "clone_fixed_overhead_bytes": self.clone_fixed_overhead_bytes,
+            "split_fixed_overhead_bytes": self.split_fixed_overhead_bytes,
+        }
+
+    def profile_error(self, results) -> Dict[str, float]:
+        """Return mean absolute percentage error against measured profile rows."""
+        clone_errors = []
+        split_errors = []
+        for row in results:
+            count = int(row["delta_n"])
+            measured_clone = float(row["clone_spike_mb"]) * 1024**2
+            measured_split = float(row["split_spike_mb"]) * 1024**2
+            predicted_clone = self.estimate_transient_bytes(count, 0)
+            predicted_split = self.estimate_transient_bytes(0, count)
+            clone_errors.append(abs(predicted_clone - measured_clone) / max(1.0, measured_clone))
+            split_errors.append(abs(predicted_split - measured_split) / max(1.0, measured_split))
+        return {
+            "clone_mape_pct": 100.0 * sum(clone_errors) / max(1, len(clone_errors)),
+            "split_mape_pct": 100.0 * sum(split_errors) / max(1, len(split_errors)),
+            "combined_mape_pct": 100.0 * (
+                sum(clone_errors) + sum(split_errors)
+            ) / max(1, len(clone_errors) + len(split_errors)),
+        }
+
+    def calibration_dict(self, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "sh_degree": self.sh_degree,
+            "bytes_per_float": self.bytes_per_float,
+            "use_adam": self.use_adam,
+            "clone_multiplier": self.clone_multiplier,
+            "split_multiplier": self.split_multiplier,
+            "clone_fixed_overhead_bytes": self.clone_fixed_overhead_bytes,
+            "split_fixed_overhead_bytes": self.split_fixed_overhead_bytes,
+            "cuda_padding_bytes": self.cuda_padding_bytes,
+            "metadata": metadata or {},
+        }
+
+    @classmethod
+    def from_calibration_file(cls, path: str) -> "ByteCostModel":
+        with open(path, encoding="utf-8") as source:
+            data = json.load(source)
+        if data.get("schema_version") != 1:
+            raise ValueError("Unsupported cost calibration schema")
+        return cls(
+            sh_degree=int(data["sh_degree"]),
+            bytes_per_float=int(data["bytes_per_float"]),
+            use_adam=bool(data["use_adam"]),
+            clone_multiplier=float(data["clone_multiplier"]),
+            split_multiplier=float(data["split_multiplier"]),
+            clone_fixed_overhead_bytes=int(data["clone_fixed_overhead_bytes"]),
+            split_fixed_overhead_bytes=int(data["split_fixed_overhead_bytes"]),
+            cuda_padding_bytes=int(data["cuda_padding_bytes"]),
+        )
+
     def get_breakdown(self, num_gaussians: int) -> Dict[str, Any]:
         """Returns human-readable memory breakdown for inspection/logging."""
         param_mb = (num_gaussians * self.param_bytes_per_gaussian) / (1024**2)
@@ -158,6 +259,8 @@ class ByteCostModel:
             "total_persistent_mb": round(total_mb, 2),
             "clone_multiplier": self.clone_multiplier,
             "split_multiplier": self.split_multiplier,
+            "clone_fixed_overhead_mb": round(self.clone_fixed_overhead_bytes / (1024**2), 3),
+            "split_fixed_overhead_mb": round(self.split_fixed_overhead_bytes / (1024**2), 3),
         }
 
     def __repr__(self) -> str:
