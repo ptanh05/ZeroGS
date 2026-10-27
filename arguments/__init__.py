@@ -10,8 +10,34 @@
 #
 
 from argparse import ArgumentParser, Namespace
+import ast
 import sys
 import os
+
+
+def parse_namespace_config(text: str) -> Namespace:
+    """Parse the legacy ``Namespace(key=value, ...)`` config without executing code."""
+    try:
+        expression = ast.parse(text.strip(), mode="eval").body
+    except SyntaxError as exc:
+        raise ValueError("Invalid cfg_args syntax") from exc
+
+    if not isinstance(expression, ast.Call):
+        raise ValueError("cfg_args must contain a Namespace(...) expression")
+    if not isinstance(expression.func, ast.Name) or expression.func.id != "Namespace":
+        raise ValueError("cfg_args may only construct argparse.Namespace")
+    if expression.args:
+        raise ValueError("Namespace positional arguments are not supported")
+
+    values = {}
+    for keyword in expression.keywords:
+        if keyword.arg is None:
+            raise ValueError("Namespace **expansion is not supported")
+        try:
+            values[keyword.arg] = ast.literal_eval(keyword.value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Unsafe or unsupported cfg_args value for {keyword.arg}") from exc
+    return Namespace(**values)
 
 class GroupParams:
     pass
@@ -146,7 +172,7 @@ def get_combined_args(parser : ArgumentParser):
     except (TypeError, FileNotFoundError):
         print("Config file not found at")
         pass
-    args_cfgfile = eval(cfgfile_string)
+    args_cfgfile = parse_namespace_config(cfgfile_string)
 
     merged_dict = vars(args_cfgfile).copy()
     for k,v in vars(args_cmdline).items():

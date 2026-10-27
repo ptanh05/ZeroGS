@@ -18,14 +18,21 @@ classifiers = [
 ]
 dependencies = [
     "torch>=2.0.0",
+    "torchvision>=0.15.0",
     "numpy>=1.24.0",
     "tqdm>=4.65.0",
     "matplotlib>=3.7.0",
+    "Pillow>=9.5.0",
+    "opencv-python>=4.7.0",
+    "plyfile>=1.0.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=7.0.0",
+]
+metrics = [
+    "lpips>=0.1.4",
 ]
 
 [tool.pyrefly]
