@@ -3,8 +3,8 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-12.0%2B-76b900.svg)](https://developer.nvidia.com/cuda-zone)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Zero-OOM](https://img.shields.io/badge/Zero--OOM-Guaranteed-brightgreen.svg)]()
-[![Build Status](https://img.shields.io/badge/tests-24%20passed-success.svg)]()
+[![Zero-OOM](https://img.shields.io/badge/Zero--OOM-Target-blue.svg)]()
+[![Build Status](https://img.shields.io/badge/tests-56%20passed-success.svg)]()
 
 **Author / Lead Researcher:** Phùng Thế Anh  
 **Research Topic:** Budget-Constrained 3D Gaussian Splatting & Systems Runtime Memory Optimization  
@@ -13,7 +13,16 @@
 
 ## 🌟 Overview
 
-**ZeroGS** is a high-performance, memory-bounded training framework for 3D Gaussian Splatting (3DGS) that guarantees **Zero-OOM** (0% crash rate) under hard VRAM budgets while simultaneously resolving the **0.20 – 0.28 dB PSNR drop** on complex occluded scenes (such as *bonsai*, *flowers*, and *garden*).
+**ZeroGS** is a research framework for memory-bounded 3D Gaussian Splatting (3DGS). It is designed to prevent mutation-time OOM under calibrated VRAM budgets and to reduce quality loss on occluded scenes such as *bonsai*, *flowers*, and *garden*. These are research targets: only measured CUDA runs produced by the real benchmark pipeline count as evidence.
+
+## Evidence status
+
+- Unit/integration logic is covered by the automated test suite.
+- Experiment 0 contains measured RTX 5060 clone/split profiling data.
+- `benchmark_suite.py`, `stress_test_admission.py`, and `ablation_occlusion.py` are synthetic harnesses. Their outputs must not be reported as measured PSNR, SSIM, LPIPS, or OOM rates.
+- Real runs write `run_manifest.json`, `run_status.json`, and `training_telemetry.jsonl`. `aggregate_real_runs.py` rejects simulation runs by default.
+- A strict Zero-OOM or quality-recovery claim requires the real multi-scene, multi-seed CUDA matrix described below.
+- Current measured results and honest claim boundaries are recorded in [`docs/EMPIRICAL_STATUS.md`](docs/EMPIRICAL_STATUS.md).
 
 Existing budget-constrained 3DGS methods (*Diet-GS*, *SPARE-GS*, *Taming 3DGS*) manage resources using **primitive counts** ($N$). However, GPU memory is allocated in **Bytes**, and mutating primitives creates massive **transient memory spikes** (up to **2.1× higher for Split vs Clone**). ZeroGS introduces real-time byte-level transient modeling, deterministic Prune-First admission control, and physics-guided occlusion compensation.
 
@@ -46,7 +55,7 @@ ZeroGS seamlessly hooks into the 3DGS densification loop between backward pass a
  │ 3. Admission Controller & Prune-First (Gaps P2, D2)    │
  │    - Reads dynamic headroom from CUDA Caching Allocator│
  │    - Triggers Prune-First BEFORE generating new points │
- │    - Zero-OOM Guarantee: M_peak <= B_VRAM - δ_safety   │
+ │    - Enforcement target: M_peak <= B_VRAM - δ_safety  │
  └─────────────────────────┬──────────────────────────────┘
                            │
                            ▼
@@ -67,7 +76,7 @@ ZeroGS seamlessly hooks into the 3DGS densification loop between backward pass a
 | Gap ID | Problem Identified | ZeroGS Solution | Empirical Proof |
 | :---: | :--- | :--- | :--- |
 | **P1 & S3** | **Transient Memory Spikes:** Split creates a 2.1× larger memory spike than Clone due to temporary child generation and Adam state re-allocation. | **ByteCostModel:** Analytical & empirical byte-level transient formula accounting for CUDA allocator overhead. | **Experiment 0:** Validated on NVIDIA RTX 5060 GPU (Split peak: 353 MB vs Clone: 167 MB for $\Delta N=100k$). |
-| **P2 & D2** | **OOM Crashes Under Hard Budgets:** Fixed thresholds fail when mutations exceed headroom. | **AdmissionController:** Deterministic **Prune-First** clears VRAM space *before* allocating new primitives. | **Stress Test:** 0% OOM across all tight budget limits (300 MB, 500 MB, 800 MB, 4 GB, 8 GB). |
+| **P2 & D2** | **OOM Crashes Under Hard Budgets:** Fixed thresholds fail when mutations exceed headroom. | **AdmissionController:** Deterministic **Prune-First** clears VRAM space *before* allocating new primitives. | Synthetic stress tests validate control logic; real CUDA matrix validation is still required. |
 | **P3** | **Suboptimal Primitive Allocation:** Count-based quotas waste memory on low-gain splits. | **MarginalUtilityAllocator:** Allocates quota according to marginal efficiency: $\lambda_i = \Delta \text{Gain}_i / \Delta \text{Byte}_i$. | Prioritizes highest quality gain per incremental Megabyte. |
 | **S1** | **Occlusion Quality Drops:** Visibility oscillation in SPARE-GS causes foliage over-pruning (-0.28 dB PSNR on *bonsai*). | **OcclusionAwareEngine:** Normalizes visibility using forward transmittance $\bar{T}$ and depth variance $\sigma_z$, adding structural protection. | **Ablation Test:** Preserves delicate fine structures from bottom-quantile over-pruning. |
 
@@ -87,7 +96,7 @@ pip install -e .
 
 ### 2. Run Automated Test Suite
 
-Execute the full automated test suite (all 24 unit and integration tests):
+Execute the full automated test suite:
 ```bash
 python -m pytest tests/
 ```
@@ -100,29 +109,44 @@ python experiments/profile_clone_vs_split.py
 ```
 *Outputs JSON metrics and publication figure to [`experiments/results/experiment_0_transient_spikes.png`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/experiment_0_transient_spikes.png).*
 
-**Experiment 1: Zero-OOM Budget Stress Test:**
+**Synthetic admission stress test (logic validation only):**
 ```bash
 python experiments/stress_test_admission.py
 ```
 *Outputs comparison table and chart to [`experiments/results/stress_test_comparison.png`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/stress_test_comparison.png).*
 
-**Experiment 2: Occlusion-Aware Demand & Over-Pruning Ablation:**
+**Synthetic occlusion ablation (logic validation only):**
 ```bash
 python experiments/ablation_occlusion.py
 ```
 
-**Phase 4: Full Multi-Scene Benchmark Suite (LaTeX Table & Pareto Curve):**
+**Synthetic multi-scene harness (not publication evidence):**
 ```bash
 python experiments/benchmark_suite.py
 ```
-*Generates publication LaTeX table [`benchmark_table.tex`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/benchmark_table.tex) and Pareto Frontier curve [`pareto_psnr_vs_vram.png`](file:///c:/Workspace/Thuc%20hanh%20cac%20mon%20nam%203/N%C4%83m%204/NCKH-2026-2027/ZeroGS/experiments/results/pareto_psnr_vs_vram.png).*
+*Generates illustrative LaTeX and Pareto artifacts. They are synthetic examples, not publication results.*
 
 ### 4. Training with ZeroGS
 
-Train with hard budget constraints:
+First profile the active GPU and generate an affine cost calibration:
+
+```bash
+python experiments/profile_clone_vs_split.py
+```
+
+Then train with hard budget constraints. Real training fails fast when the dataset is missing and requires native rasterizer statistics for occlusion-aware runs:
 ```bash
 # Train with an explicit 6GB VRAM limit and 512MB safety headroom
-python train.py -s <path_to_colmap_scene> -m output/model_6gb --hard_vram_limit_mb 6144.0 --safety_headroom_mb 512.0 --gamma_occ 0.35
+python train.py -s <path_to_colmap_scene> -m output/model_6gb \
+  --hard_vram_limit_mb 6144.0 --safety_headroom_mb 512.0 \
+  --cost_calibration experiments/results/cost_calibration.json \
+  --gamma_occ 0.35 --seed 0
+```
+
+Simulation is explicit and is intended only for smoke tests:
+
+```bash
+python train.py --simulation_mode --iterations 10 -m output/smoke
 ```
 
 ### 5. Evaluation & Metric Calculation
@@ -135,6 +159,27 @@ python render.py -m output/model_6gb -s <path_to_colmap_scene> --skip_train
 # Compute PSNR, SSIM, and LPIPS
 python metrics.py -m output/model_6gb
 ```
+
+### 6. Run and aggregate measured benchmark evidence
+
+Prepare a 3-scene × 3-budget × 3-seed matrix. Omit `--execute` to inspect the generated plan without launching jobs:
+
+```bash
+python experiments/run_real_matrix.py \
+  --scene bonsai=<path_to_bonsai> \
+  --scene flowers=<path_to_flowers> \
+  --scene garden=<path_to_garden> \
+  --calibration experiments/results/cost_calibration.json \
+  --budgets 4096 6144 8192 --seeds 0 1 2 --execute
+```
+
+Aggregate only measured, completed and failed runs:
+
+```bash
+python experiments/aggregate_real_runs.py output/real_benchmark
+```
+
+The resulting JSON/CSV reports mean, standard deviation, completion count, OOM count, and measured peak reserved VRAM. Official external baselines must be run from their own implementations and supplied with compatible manifests; the synthetic harness is not a replacement for baseline reproduction.
 
 ---
 

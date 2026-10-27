@@ -261,7 +261,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **Tuần 1: Khởi động & Nền tảng** | Đo lường thực tế trên GPU, viết `ByteCostModel` | Thiết kế khung `AdmissionController` và kịch bản stress test | Tìm hiểu kênh `transmittance` & `depth_var` từ renderer | Thiết lập môi trường, chuẩn bị pipeline metrics và test runner |
 | **Tuần 2: Lõi thuật toán** | Hoàn thành `Experiment 0`, chốt các hệ số $\phi_{clone}, \phi_{split}$ | Hoàn thành cơ chế `Prune-First` và quyết định 3 trạng thái | Hoàn thiện công thức $\Omega_i$ và mặt nạ bảo vệ cấu trúc | Xây dựng thuật toán Knapsack `MarginalUtilityAllocator` |
-| **Tuần 3: Tích hợp & Stress Test** | Hỗ trợ kiểm thử độ lệch bộ nhớ khi chạy thực tế | Chạy `stress_test_admission.py` khẳng định 0% OOM | Chạy `ablation_occlusion.py` khẳng định tăng +0.28 dB PSNR | Ghép 4 module vào `scheduler.py` và hook vào `train.py` |
+| **Tuần 3: Tích hợp & Stress Test** | Hỗ trợ kiểm thử độ lệch bộ nhớ khi chạy thực tế | Dùng script tổng hợp để kiểm tra logic, sau đó chạy CUDA matrix theo `VALIDATION_PROTOCOL.md` | Dùng ablation tổng hợp để kiểm tra logic, sau đó đo PSNR trên scene thật | Ghép 4 module vào `scheduler.py` và hook vào `train.py` |
 | **Tuần 4: Đánh giá & Báo cáo** | Viết phần Phương pháp mô hình hóa bộ nhớ trong bài báo | Viết phần Hệ thống & Cơ chế kiểm soát tiếp nhận | Viết phần Phân tích vật lý che khuất & Ablation | Chạy toàn bộ Benchmark, vẽ Pareto, xuất bảng LaTeX |
 
 ---

@@ -107,7 +107,7 @@ $$\text{Headroom} = \max(0, B_{VRAM} - \delta_{safety} - M_{allocated})$$
    If even total eviction cannot cover $\Delta M_{transient}$, the mutation batch is scaled down proportionally by ratio $\alpha = \frac{\text{Headroom} + \Delta M_{freed}}{\Delta M_{transient}}$:
    $$\mathbf{SHRINK\_AND\_PRUNE\_FIRST}$$
 
-This deterministic admission control mathematically guarantees a **0% OOM crash rate**.
+Under a calibrated cost model and complete memory accounting, this controller is designed to keep admitted mutations within the configured bound. A **0% OOM** claim is accepted only after the measured protocol in `VALIDATION_PROTOCOL.md` passes.
 
 ---
 
@@ -136,7 +136,7 @@ $$\widetilde{D}_i = H_i \cdot V_i \cdot \Omega_i$$
 #### Structural Protection Mask:
 Primitives exhibiting substantial depth variance alongside low transmittance satisfy:
 $$\sigma_{z, i} > 0.01 \cdot \text{scene\_extent} \quad \text{and} \quad \bar{T}_i < \tau_{trans}$$
-These primitives represent high-frequency occlusion boundaries (foliage, twigs, petals) and are strictly **excluded** from bottom-quantile utility pruning, recovering the **+0.28 dB PSNR drop**.
+These primitives are treated as candidate high-frequency occlusion boundaries and excluded from bottom-utility pruning. Recovery of **+0.28 dB PSNR** remains a measured hypothesis until the multi-scene ablation protocol passes.
 
 ---
 
