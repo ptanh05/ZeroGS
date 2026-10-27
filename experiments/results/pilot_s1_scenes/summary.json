@@ -1,0 +1,176 @@
+[
+  {
+    "scene": "bonsai",
+    "method": "s1_full",
+    "budget_mb": 6144.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.86226019988189,
+      "std": 0.1688260213770345,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.4090424981471655,
+      "std": 0.005503852135492258,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 4333.333333333333,
+      "std": 677.7649543413507,
+      "n": 3
+    }
+  },
+  {
+    "scene": "bonsai",
+    "method": "s1_visibility_only",
+    "budget_mb": 6144.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.775578249682177,
+      "std": 0.11851458556943344,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.40618624867082714,
+      "std": 0.00446321580342982,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 4718.666666666667,
+      "std": 439.7559929476042,
+      "n": 3
+    }
+  },
+  {
+    "scene": "flowers",
+    "method": "s1_full",
+    "budget_mb": 6144.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.862315452460086,
+      "std": 0.037461799608408224,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.21837302748904083,
+      "std": 0.001207586067923627,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 3606.6666666666665,
+      "std": 180.7355342298059,
+      "n": 3
+    }
+  },
+  {
+    "scene": "flowers",
+    "method": "s1_visibility_only",
+    "budget_mb": 6144.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.890974203745523,
+      "std": 0.07621365319898457,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.21781341483195624,
+      "std": 0.0004304727103577697,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 3743.3333333333335,
+      "std": 162.58331197676264,
+      "n": 3
+    }
+  },
+  {
+    "scene": "garden",
+    "method": "s1_full",
+    "budget_mb": 6144.0,
+    "runs": 1,
+    "completed_runs": 0,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 1,
+    "psnr": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "ssim": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    }
+  },
+  {
+    "scene": "garden",
+    "method": "s1_visibility_only",
+    "budget_mb": 6144.0,
+    "runs": 1,
+    "completed_runs": 0,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 1,
+    "psnr": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "ssim": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    }
+  }
+]

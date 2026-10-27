@@ -1,0 +1,89 @@
+[
+  {
+    "scene": "bonsai",
+    "method": "p3_demand_only",
+    "budget_mb": 4608.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.94392137269716,
+      "std": 0.08495061331121383,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.41610206247449993,
+      "std": 0.001447390791796663,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 3757.3333333333335,
+      "std": 264.7439014091417,
+      "n": 3
+    }
+  },
+  {
+    "scene": "bonsai",
+    "method": "p3_gain_per_byte",
+    "budget_mb": 4608.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.954063965393617,
+      "std": 0.1535819765605617,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.41598074540898605,
+      "std": 0.01061411250456478,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 3818.6666666666665,
+      "std": 451.9749255581921,
+      "n": 3
+    }
+  },
+  {
+    "scene": "bonsai",
+    "method": "p3_random",
+    "budget_mb": 4608.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 13.27945122418103,
+      "std": 0.18377921835226624,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.40153117410771483,
+      "std": 0.005558571205564954,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 3778.0,
+      "std": 236.73614003780665,
+      "n": 3
+    }
+  }
+]

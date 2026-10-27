@@ -1,0 +1,60 @@
+[
+  {
+    "scene": "garden",
+    "method": "s1_full",
+    "budget_mb": 7168.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 15.818559646606445,
+      "std": 0.13713398710098954,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.2964359074831009,
+      "std": 0.0010098841218693553,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 6020.666666666667,
+      "std": 524.4781533422849,
+      "n": 3
+    }
+  },
+  {
+    "scene": "garden",
+    "method": "s1_visibility_only",
+    "budget_mb": 7168.0,
+    "runs": 3,
+    "completed_runs": 3,
+    "oom_runs": 0,
+    "budget_exceeded_runs": 0,
+    "psnr": {
+      "mean": 15.644318315717909,
+      "std": 0.12425712350720199,
+      "n": 3
+    },
+    "ssim": {
+      "mean": 0.2946046069264412,
+      "std": 0.0020399519875272058,
+      "n": 3
+    },
+    "lpips": {
+      "mean": null,
+      "std": null,
+      "n": 0
+    },
+    "peak_reserved_mb": {
+      "mean": 6022.0,
+      "std": 523.2666624198412,
+      "n": 3
+    }
+  }
+]

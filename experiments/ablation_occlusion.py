@@ -1,6 +1,6 @@
 """
 Experiment 2: Occlusion-Aware Demand & Over-Pruning Ablation.
-Validates Module 4 (Solving Gap S1 - Explaining the +0.28 dB PSNR Recovery on Foliage/Bonsai).
+Synthetic logic probe for Module 4. It does not establish a PSNR recovery claim.
 
 Quantitatively measures the fine structure survival rate under bottom-quantile pruning:
 - Baseline (SPARE-GS): Uses naive demand D = H * V. Vulnerable to occlusion flicker;
@@ -13,12 +13,14 @@ import os
 import sys
 import json
 import torch
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from typing import Dict, Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from zerogs.occlusion_engine import OcclusionAwareEngine
+from zerogs.occlusion_engine import OcclusionAwareEngine, bottom_utility_mask
 
 
 def run_occlusion_ablation(
@@ -30,7 +32,7 @@ def run_occlusion_ablation(
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print("=" * 80)
-    print(f"ZeroGS Experiment 2: Occlusion-Aware Demand Ablation (Solving Gap S1)")
+    print("ZeroGS Synthetic Occlusion-Aware Logic Probe (not measured PSNR evidence)")
     print(f"Total primitives: {num_total_primitives:,} | Delicate fine structures (foliage): {num_fine_structures:,}")
     print("=" * 80)
 
@@ -82,24 +84,24 @@ def run_occlusion_ablation(
     cutoff_quantile = 0.10
 
     # Under SPARE-GS:
-    spare_thresh = torch.quantile(spare_demand, cutoff_quantile)
-    spare_pruned_mask = spare_demand < spare_thresh
+    no_protection = torch.zeros_like(protected_mask)
+    spare_pruned_mask = bottom_utility_mask(spare_demand, no_protection, cutoff_quantile)
     spare_foliage_pruned = spare_pruned_mask[:num_fine_structures].sum().item()
     spare_foliage_loss_rate = (spare_foliage_pruned / num_fine_structures) * 100
 
     # Under ZeroGS without protection:
-    zerogs_thresh = torch.quantile(zerogs_demand, cutoff_quantile)
-    zerogs_unprotected_prune = zerogs_demand < zerogs_thresh
+    zerogs_unprotected_prune = bottom_utility_mask(zerogs_demand, no_protection, cutoff_quantile)
     zerogs_foliage_pruned_unprot = zerogs_unprotected_prune[:num_fine_structures].sum().item()
 
     # Under ZeroGS WITH Protected Structure Mask:
-    zerogs_final_prune = torch.logical_and(zerogs_demand < zerogs_thresh, ~protected_mask)
+    zerogs_final_prune = bottom_utility_mask(zerogs_demand, protected_mask, cutoff_quantile)
     zerogs_foliage_pruned_final = zerogs_final_prune[:num_fine_structures].sum().item()
     zerogs_foliage_loss_rate = (zerogs_foliage_pruned_final / num_fine_structures) * 100
 
     protected_foliage_count = protected_mask[:num_fine_structures].sum().item()
 
     results = {
+        "evidence_type": "simulation",
         "num_total_primitives": num_total_primitives,
         "num_fine_structures": num_fine_structures,
         "spare_foliage_pruned": spare_foliage_pruned,
@@ -107,13 +109,19 @@ def run_occlusion_ablation(
         "zerogs_foliage_protected_count": protected_foliage_count,
         "zerogs_foliage_pruned": zerogs_foliage_pruned_final,
         "zerogs_foliage_pruned_pct": round(zerogs_foliage_loss_rate, 2),
-        "foliage_retention_improvement": round(spare_foliage_loss_rate - zerogs_foliage_loss_rate, 2),
+        "zerogs_unprotected_foliage_pruned": zerogs_foliage_pruned_unprot,
+        "protection_effect_fewer_foliage_pruned": int(
+            zerogs_foliage_pruned_unprot - zerogs_foliage_pruned_final
+        ),
     }
 
-    print(f"SPARE-GS Foliage Pruned:   {spare_foliage_pruned:,} / {num_fine_structures:,} ({spare_foliage_loss_rate:.1f}%) [CATASTROPHIC OVER-PRUNING]")
+    print(f"Visibility-only Foliage Pruned: {spare_foliage_pruned:,} / {num_fine_structures:,} ({spare_foliage_loss_rate:.1f}%)")
     print(f"ZeroGS Protected Foliage:  {protected_foliage_count:,} / {num_fine_structures:,} ({protected_foliage_count/num_fine_structures*100:.1f}%)")
-    print(f"ZeroGS Foliage Pruned:     {zerogs_foliage_pruned_final:,} / {num_fine_structures:,} ({zerogs_foliage_loss_rate:.1f}%) [PROTECTED]")
-    print(f"Retention Improvement:     +{results['foliage_retention_improvement']:.1f}% fine geometry preserved!")
+    print(f"ZeroGS Foliage Pruned:     {zerogs_foliage_pruned_final:,} / {num_fine_structures:,} ({zerogs_foliage_loss_rate:.1f}%)")
+    print(
+        "Protection-only effect:     "
+        f"{results['protection_effect_fewer_foliage_pruned']:,} fewer synthetic foliage points pruned"
+    )
 
     # Save JSON summary
     summary_path = os.path.join(output_dir, "occlusion_ablation_results.json")
@@ -130,7 +138,7 @@ def run_occlusion_ablation(
 
     bars = plt.bar(methods, prune_rates, color=colors, width=0.45)
     plt.ylabel("Delicate Foliage Over-Pruning Rate (%)", fontsize=12, fontweight="bold")
-    plt.title("ZeroGS vs SPARE-GS: Over-Pruning of Thin Structures (Gap S1)\nResolving the 0.28 dB PSNR Drop on Bonsai & Flowers", fontsize=13, fontweight="bold")
+    plt.title("Synthetic Occlusion Ablation (Logic Validation Only)\nNo measured PSNR claim", fontsize=13, fontweight="bold")
     plt.ylim(0, max(prune_rates) * 1.3)
     plt.grid(axis="y", linestyle="--", alpha=0.5)
 

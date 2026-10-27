@@ -5,7 +5,7 @@ Runs systematic comparative benchmarking between:
 1. Vanilla 3DGS (Unbounded mutation -> OOM crashes under budget)
 2. Diet-GS (Primitive count bounded -> Transient split spike OOM)
 3. SPARE-GS (Visibility count utility -> Foliage over-pruning Gap S1)
-4. ZeroGS @ 4GB, 6GB, 8GB Hard Budgets (Our method -> 0% OOM, Foliage Protection, Pareto-Optimal)
+4. Synthetic ZeroGS variants at 4GB, 6GB, and 8GB modeled budgets.
 
 Generates:
 - JSON metrics: experiments/results/benchmark_results.json
@@ -18,6 +18,8 @@ import sys
 import json
 import gc
 import torch
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from typing import Dict, Any, List
 
@@ -98,7 +100,7 @@ def simulate_method_run(
         foliage_retention = 64.2 if not crashed else 0.0
 
     elif method_name.startswith("ZeroGS"):
-        # Zero-OOM admission control mathematically enforces peak <= budget
+        # Synthetic formula constrains the modeled peak; this is not CUDA evidence.
         target_budget = budget_mb
         adm_ctrl = AdmissionController(
             cost_model=cost_model,
@@ -113,7 +115,7 @@ def simulate_method_run(
             prune_candidates_count=int(n_base * 0.25),
             current_allocated_bytes=initial_bytes,
         )
-        # Deterministic: 0% crash rate guaranteed
+        # Synthetic controller outcome; not an observed CUDA crash rate.
         crashed = False
         peak_mb = min(initial_mb + (decision.transient_cost_bytes / (1024**2)), target_budget - 128.0)
         # Occlusion engine protects delicate structures -> recovers +0.28 dB PSNR drop
@@ -125,6 +127,7 @@ def simulate_method_run(
         raise ValueError(f"Unknown method {method_name}")
 
     return {
+        "evidence_type": "simulation",
         "scene": scene_name,
         "method": method_name,
         "budget_mb": budget_mb,
@@ -141,7 +144,7 @@ def run_benchmark_suite(output_dir: str = "experiments/results"):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print("=" * 85)
-    print("ZeroGS Phase 4: Full Multi-Scene Benchmark Suite")
+    print("ZeroGS SYNTHETIC Benchmark Harness (not measured scene results)")
     print("Testing 6 Benchmark Scenes across Vanilla, Diet-GS, SPARE-GS, and ZeroGS (4G/6G/8G)")
     print("=" * 85)
 
@@ -169,10 +172,10 @@ def run_benchmark_suite(output_dir: str = "experiments/results"):
         json.dump(records, f, indent=2)
     print(f"\n[+] Saved raw metrics to: {json_path}")
 
-    # 2. Export Publication-Ready LaTeX Table
+    # 2. Export illustrative LaTeX table (synthetic values)
     tex_path = os.path.join(output_dir, "benchmark_table.tex")
     generate_latex_table(records, tex_path)
-    print(f"[+] Saved publication LaTeX table to: {tex_path}")
+    print(f"[+] Saved synthetic illustrative LaTeX table to: {tex_path}")
 
     # 3. Generate Pareto Frontier Chart
     chart_path = os.path.join(output_dir, "pareto_psnr_vs_vram.png")
@@ -185,7 +188,7 @@ def generate_latex_table(records: List[Dict[str, Any]], tex_path: str):
     lines = [
         r"\begin{table*}[t]",
         r"\centering",
-        r"\caption{\textbf{Quantitative Benchmark on Mip-NeRF 360 Scenes.} Comparison of peak VRAM footprint, crash rate under a 4\,GB hard budget, Novel View Synthesis fidelity (PSNR, SSIM), and fine structural foliage retention rate.}",
+        r"\caption{\textbf{Synthetic ZeroGS Illustration (Not Measured Evidence).} Formula-generated values used only to exercise the reporting pipeline.}",
         r"\label{tab:zerogs_benchmark}",
         r"\resizebox{\textwidth}{!}{",
         r"\begin{tabular}{l|c|cc|ccc|c}",
@@ -292,7 +295,7 @@ def generate_pareto_plot(records: List[Dict[str, Any]], chart_path: str):
     plt.axvline(x=4096, color="red", linestyle="--", alpha=0.7, label="4GB VRAM Hard Budget")
     plt.axvline(x=6144, color="blue", linestyle="--", alpha=0.5, label="6GB VRAM Hard Budget")
 
-    plt.title("Pareto Frontier: Rendering Quality (PSNR) vs. Peak GPU Footprint", fontsize=13, fontweight="bold", pad=12)
+    plt.title("Synthetic PSNR vs. Modeled GPU Footprint (Illustration Only)", fontsize=13, fontweight="bold", pad=12)
     plt.xlabel("Peak GPU Memory Allocated (MB)", fontsize=11, fontweight="bold")
     plt.ylabel("Mean PSNR (dB)", fontsize=11, fontweight="bold")
     plt.grid(True, linestyle=":", alpha=0.6)

@@ -1,11 +1,11 @@
 """
-Experiment 1: Zero-OOM Stress Test under Hard VRAM Budget Constraints.
+Experiment 1: Synthetic Admission Logic Stress Test.
 Validates Module 2 (Admission Controller & Prune-First - Gaps P2 & D2).
 
 Compares:
 1. Vanilla 3DGS (No admission control -> crashes with OOM when budget is exceeded).
 2. Fixed Quota / Diet-GS (Primitive count bounded, but blind to transient Split spikes -> still vulnerable to OOM).
-3. ZeroGS (Byte-Level Admission Controller + Deterministic Prune-First -> 0% OOM Guarantee).
+3. ZeroGS (Byte-Level Admission Controller + Deterministic Prune-First simulation).
 """
 
 import os
@@ -13,6 +13,8 @@ import sys
 import json
 import gc
 import torch
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from typing import Dict, Any, List
 
@@ -32,7 +34,7 @@ def run_stress_test(
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print("=" * 80)
-    print(f"ZeroGS Stress Test: Hard VRAM Budget Enforcement & Zero-OOM Verification")
+    print("ZeroGS SIMULATED Stress Test: Admission Logic (not a CUDA OOM proof)")
     print(f"Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
     print(f"Tested Hard Budgets: {simulated_budgets_mb} MB")
     print("=" * 80)
@@ -140,6 +142,7 @@ def run_stress_test(
             zerogs_pts += decision.n_clone + decision.n_split
 
         results[f"{int(budget_mb)}MB"] = {
+            "evidence_type": "simulation",
             "budget_mb": budget_mb,
             "vanilla_oom": vanilla_oom,
             "vanilla_peak_mb": round(vanilla_peak_mb, 2),
@@ -154,7 +157,7 @@ def run_stress_test(
 
         print(f"Vanilla 3DGS:  OOM Crashed = {vanilla_oom} (Peak demanded: {vanilla_peak_mb:.1f} MB)")
         print(f"Diet-GS:       OOM Crashed = {diet_oom} (Peak demanded: {diet_peak_mb:.1f} MB)")
-        print(f"ZeroGS:        OOM Crashed = {zerogs_oom} (Peak controlled: {zerogs_peak_mb:.1f} MB <= {budget_mb} MB) [100% Zero-OOM]")
+        print(f"ZeroGS:        Simulated violation = {zerogs_oom} (Modeled peak: {zerogs_peak_mb:.1f} MB <= {budget_mb} MB)")
 
     # Save stress test summary
     summary_path = os.path.join(output_dir, "stress_test_admission.json")
@@ -173,7 +176,7 @@ def run_stress_test(
     x = range(len(budgets))
 
     plt.bar([i - bar_width/2 for i in x], vanilla_peaks, width=bar_width, label="Vanilla 3DGS (OOM Crashed)", color="#d9534f")
-    plt.bar([i + bar_width/2 for i in x], zerogs_peaks, width=bar_width, label="ZeroGS (Zero-OOM Enforced)", color="#5cb85c")
+    plt.bar([i + bar_width/2 for i in x], zerogs_peaks, width=bar_width, label="ZeroGS (Modeled Admission)", color="#5cb85c")
 
     for i, b in enumerate(budgets):
         plt.axhline(y=b, color="gray", linestyle=":", alpha=0.7)
@@ -182,7 +185,7 @@ def run_stress_test(
 
     plt.xlabel("Target Hard VRAM Budget", fontsize=12, fontweight="bold")
     plt.ylabel("Peak VRAM Footprint (MB)", fontsize=12, fontweight="bold")
-    plt.title("ZeroGS vs Baselines: Peak VRAM & Zero-OOM Guarantee Under Tight Budgets", fontsize=13, fontweight="bold")
+    plt.title("Synthetic Admission-Control Stress Test (Logic Only)", fontsize=13, fontweight="bold")
     plt.xticks(x, [f"{int(b)} MB" for b in budgets], fontsize=11)
     plt.legend(frameon=True, facecolor="white", fontsize=10)
     plt.grid(axis="y", linestyle="--", alpha=0.5)

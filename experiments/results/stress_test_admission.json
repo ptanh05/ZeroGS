@@ -1,5 +1,6 @@
 {
   "300MB": {
+    "evidence_type": "simulation",
     "budget_mb": 300.0,
     "vanilla_oom": true,
     "vanilla_peak_mb": 346.25,
@@ -12,6 +13,7 @@
     "zerogs_final_pts": 266819
   },
   "500MB": {
+    "evidence_type": "simulation",
     "budget_mb": 500.0,
     "vanilla_oom": true,
     "vanilla_peak_mb": 508.3,
@@ -24,6 +26,7 @@
     "zerogs_final_pts": 475234
   },
   "800MB": {
+    "evidence_type": "simulation",
     "budget_mb": 800.0,
     "vanilla_oom": true,
     "vanilla_peak_mb": 832.4,
