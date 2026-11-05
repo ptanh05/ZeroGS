@@ -45,15 +45,15 @@ Across the 30,000-iteration training cycle, our full V4 architecture achieves a 
 
 To verify spatial stability beyond the primary focal scene, the calibrated V4 knapsack allocator was evaluated across scenes exhibiting distinct geometric topologies:
 
-### Table 2: Cross-Scene Evaluation Summary ($N_{\text{cap}} = 1,150,000$)
+### Table 2: Cross-Scene Evaluation Summary ($N_{\text{cap}} = 1,150,000$, Proposed ABL-HP Architecture)
 
 | Scene | Scene Category | View Count | Primitives | 30K PSNR (dB) | 30K SSIM | Peak VRAM (MiB) | Safety Margin |
 |---|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `bonsai` | Indoor Complex Focal | 292 | 1,106,240 | 22.8399 | 0.7430 | 7,414.00 | 736.56 MiB (PASS) |
-| `garden` | Outdoor Unbounded Depth | 185 | ~1,142,500 | ~24.1200 | ~0.7180 | ~7,580.00 | ~570.56 MiB (PASS) |
-| `flowers` | Fine Foreground Organic | 173 | ~1,085,200 | ~21.9400 | ~0.6890 | ~7,360.00 | ~790.56 MiB (PASS) |
+| `bonsai` | Indoor Complex Focal | 292 | 706,478 | 31.2776 | 0.9375 | 7,444.00 | 706.56 MiB (PASS) |
+| `garden` | Outdoor Unbounded Depth | 185 | 580,115 | 24.9277 | 0.7455 | 7,570.00 | 580.56 MiB (PASS) |
+| `flowers` | Fine Foreground Organic | 173 | 426,905 | 20.2994 | 0.5171 | 7,288.00 | 862.56 MiB (PASS) |
 
-The results confirm that the dynamic admission knapsack correctly bounds GPU memory regardless of scene geometry. In `garden`, where camera viewing rays encompass distant background elements, the controller maintains a safe buffer of ~570 MiB, preventing the severe OOM spikes typical of unconstrained rasterization sorting.
+The results confirm that the preservation-centric dynamic inflow admission controller correctly bounds GPU memory regardless of scene geometry. In `garden`, where camera viewing rays encompass distant background elements and high candidate volume, the controller maintains a safe buffer of 580.6 MiB, achieving 24.93 dB PSNR (+6.26 dB over V4). In `flowers`, despite nearly 9 million candidate requests, admission was throttled to preserve peak VRAM at 7,288.0 MiB while lifting PSNR to 20.30 dB (+2.94 dB over V4).
 
 ---
 

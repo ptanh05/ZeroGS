@@ -205,11 +205,11 @@ Table 4: Cross-scene paired validation between Baseline V4 and Proposed ABL-HP.
 +---------+-----------------------+------------+--------------------+--------------------+-------------+-----------------+
 | bonsai  | Bounded Indoor Object | 37 / 292   | 20.7455 +/- 1.8690 | 31.8305 +/- 0.4789 | +11.0850 dB | 7,337.7 +/- 121 |
 | garden  | Outdoor Unbounded 360 | 24 / 185   | 18.6656 dB (0.3847)| 24.9277 dB (0.7455)| +6.2621 dB  | 7,570.0 MiB     |
-| flowers | Outdoor Foreground    | 22 / 173   | 17.3572 dB (0.3378)| [Executing Task]   | [Pending]   | [Pending]       |
+| flowers | Outdoor Foreground    | 22 / 173   | 17.3572 dB (0.3378)| 20.2994 dB (0.5171)| +2.9422 dB  | 7,288.0 MiB     |
 +---------+-----------------------+------------+--------------------+--------------------+-------------+-----------------+
 ```
 
-To stress-test memory safety under extreme spatial demand, we evaluated the framework on complex unbounded outdoor scenes. In `flowers`, total candidate requests reached **$9{,}983{,}103$**. The Dynamic Inflow Governor successfully detected tight headroom and rejected **$8{,}210{,}034$ candidates** ($82.24\%$ rejection rate). Consequently, peak VRAM was capped at **$6{,}942.0\text{ MiB}$** with **zero OOMs**. Similarly, on `garden` ($3.19\text{M}$ requests), the governor throttled $74.63\%$ of candidates, maintaining peak VRAM at **$7{,}656.0\text{ MiB}$**.
+To stress-test memory safety and reconstruction fidelity under extreme spatial demand, we evaluated the framework across contrasting topologies in Mip-NeRF 360. In `flowers`, intense candidate generation reached **$8{,}909{,}007$ requests**. The Dynamic Inflow Governor detected compressed headroom and throttled **$7{,}923{,}075$ candidates** ($88.93\%$ rejection rate), capping peak device VRAM at **$7{,}288.0\text{ MiB}$** with **zero OOMs** while achieving a **$+2.9422\text{ dB}$ PSNR gain** and increasing SSIM from $0.3378$ to $0.5171$. Similarly, on `garden` ($6.27\text{M}$ requests), the governor admitted $675{,}105$ primitives and rejected $5{,}590{,}259$ candidates, yielding a massive **$+6.2621\text{ dB}$ PSNR improvement** ($24.93\text{ dB}$ vs $18.67\text{ dB}$) with peak VRAM bounded at **$7{,}570.0\text{ MiB}$**. Across all three scenes, exact candidate conservation ($\Delta = 0$) was preserved without primitive leakage.
 
 ---
 
