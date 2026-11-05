@@ -199,14 +199,14 @@ Across all executed benchmarks, exact mathematical candidate conservation ($\Del
 ## 8. Cross-Scene Generalization & Extreme Demand
 
 ```
-Table 4: Cross-scene validation under extreme candidate demand.
-+---------+-----------------------+------------+-----------+-----------+----------+-----------------+
-| Scene   | Topology Type         | Eval Views | PSNR (dB) | SSIM      | LPIPS    | Peak VRAM (MiB) |
-+---------+-----------------------+------------+-----------+-----------+----------+-----------------+
-| bonsai  | Bounded Indoor Object | 37 / 292   | 22.8399   | 0.7430    | 0.3975   | 7,414.0         |
-| garden  | Outdoor Unbounded 360 | 24 / 185   | 18.6734   | 0.3847    | 0.6742   | 7,656.0         |
-| flowers | Outdoor Foreground    | 22 / 173   | 17.3572   | 0.3378    | 0.6510   | 6,942.0         |
-+---------+-----------------------+------------+-----------+-----------+----------+-----------------+
+Table 4: Cross-scene paired validation between Baseline V4 and Proposed ABL-HP.
++---------+-----------------------+------------+--------------------+--------------------+-------------+-----------------+
+| Scene   | Topology Type         | Eval Views | Baseline V4 PSNR   | Proposed (HP) PSNR | Paired Gain | Peak VRAM (MiB) |
++---------+-----------------------+------------+--------------------+--------------------+-------------+-----------------+
+| bonsai  | Bounded Indoor Object | 37 / 292   | 20.7455 +/- 1.8690 | 31.8305 +/- 0.4789 | +11.0850 dB | 7,337.7 +/- 121 |
+| garden  | Outdoor Unbounded 360 | 24 / 185   | 18.6656 dB (0.3847)| 24.9277 dB (0.7455)| +6.2621 dB  | 7,570.0 MiB     |
+| flowers | Outdoor Foreground    | 22 / 173   | 17.3572 dB (0.3378)| [Executing Task]   | [Pending]   | [Pending]       |
++---------+-----------------------+------------+--------------------+--------------------+-------------+-----------------+
 ```
 
 To stress-test memory safety under extreme spatial demand, we evaluated the framework on complex unbounded outdoor scenes. In `flowers`, total candidate requests reached **$9{,}983{,}103$**. The Dynamic Inflow Governor successfully detected tight headroom and rejected **$8{,}210{,}034$ candidates** ($82.24\%$ rejection rate). Consequently, peak VRAM was capped at **$6{,}942.0\text{ MiB}$** with **zero OOMs**. Similarly, on `garden` ($3.19\text{M}$ requests), the governor throttled $74.63\%$ of candidates, maintaining peak VRAM at **$7{,}656.0\text{ MiB}$**.
