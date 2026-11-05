@@ -7,6 +7,13 @@ and exports rendered images and ground truth images for metric computation.
 
 import os
 import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from argparse import ArgumentParser
 from typing import List, Optional, Union, Any
 import torch

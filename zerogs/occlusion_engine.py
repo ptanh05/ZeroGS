@@ -50,6 +50,7 @@ class OcclusionAwareEngine:
         transmittance_tau: float = 0.25,
         depth_epsilon: float = 1e-4,
         occlusion_mode: str = "full",
+        occlusion_physics_mode: str = "corrected",
         enable_structure_protection: bool = True,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
@@ -59,6 +60,9 @@ class OcclusionAwareEngine:
             gamma_occ: Occlusion compensation weight (default: 0.35).
             transmittance_tau: Transmittance threshold below which a point is deemed foreground/occluding (default: 0.25).
             depth_epsilon: Numerical stability epsilon.
+            occlusion_mode: Occlusion modulation mode ('full', 'transmittance_only', 'depth_only', 'none').
+            occlusion_physics_mode: Physics formulation ('corrected', 'legacy', 'none').
+            enable_structure_protection: Whether to protect high depth-variance surfaces.
             device: Computing device ('cuda' or 'cpu').
         """
         self.gamma_occ = gamma_occ
@@ -66,7 +70,10 @@ class OcclusionAwareEngine:
         self.depth_epsilon = depth_epsilon
         if occlusion_mode not in {"full", "transmittance_only", "depth_only", "none"}:
             raise ValueError(f"Unsupported occlusion_mode: {occlusion_mode}")
+        if occlusion_physics_mode not in {"corrected", "legacy", "none"}:
+            raise ValueError(f"Unsupported occlusion_physics_mode: {occlusion_physics_mode}")
         self.occlusion_mode = occlusion_mode
+        self.occlusion_physics_mode = occlusion_physics_mode
         self.enable_structure_protection = enable_structure_protection
         self.device = device
 
@@ -102,13 +109,13 @@ class OcclusionAwareEngine:
         if visible_indices is None or len(visible_indices) == 0:
             return
 
-        idx = visible_indices.to(self.device).long()
-        depths = view_depths.to(self.device).float()
-        T = view_transmittance.to(self.device).float()
+        idx = visible_indices.detach().to(self.device).long()
+        depths = view_depths.detach().to(self.device).float()
+        T = view_transmittance.detach().to(self.device).float()
         within_view_var = (
             torch.zeros_like(depths)
             if view_depth_variance is None
-            else view_depth_variance.to(self.device).float()
+            else view_depth_variance.detach().to(self.device).float()
         )
         expected_shape = idx.shape
         for name, value in (("view_depths", depths), ("view_transmittance", T), ("view_depth_variance", within_view_var)):
@@ -148,26 +155,7 @@ class OcclusionAwareEngine:
         mean_T = self.accum_T / vis_counts
         mean_depth = self.accum_depth / vis_counts
         mean_depth_sq = self.accum_depth_sq / vis_counts
-
-        # Law of total variance: E[Var(z|view)] + Var(E[z|view]).
         between_view_var = torch.clamp(mean_depth_sq - (mean_depth**2), min=0.0)
-        within_view_var = self.accum_depth_var / vis_counts
-        depth_var = torch.clamp(between_view_var + within_view_var, min=0.0)
-        depth_std = torch.sqrt(depth_var + self.depth_epsilon)
-
-        # Occlusion modulation factor Omega_i:
-        # High depth variance (boundary across cameras) + Low transmittance (surface/dense)
-        # -> High occlusion sensitivity
-        normalized_depth_fluctuation = depth_std / (float(scene_extent) + self.depth_epsilon)
-        if self.occlusion_mode == "full":
-            occlusion_signal = normalized_depth_fluctuation * (1.0 - mean_T)
-        elif self.occlusion_mode == "transmittance_only":
-            occlusion_signal = 1.0 - mean_T
-        elif self.occlusion_mode == "depth_only":
-            occlusion_signal = normalized_depth_fluctuation
-        else:
-            occlusion_signal = torch.zeros_like(mean_T)
-        occlusion_factor = 1.0 + self.gamma_occ * occlusion_signal
 
         # Baseline demand: Viewspace gradient * Visibility count
         if self.grad_accum is None:
@@ -175,25 +163,77 @@ class OcclusionAwareEngine:
         else:
             raw_demand = self.grad_accum * vis_counts
 
-        compensated_demand = torch.where(observed, raw_demand * occlusion_factor, torch.zeros_like(raw_demand))
-
-        # Protected structure mask:
-        # Gaussians with significant depth variance (thin structures visible from distinct angles)
-        # and low transmittance should NOT be eliminated by bottom-quantile pruning!
-        is_high_depth_var = depth_std > (0.01 * float(scene_extent))
-        is_occluding = mean_T < self.transmittance_tau
-        if not self.enable_structure_protection or self.occlusion_mode == "none":
+        # Branch 1: "none" disables every Occlusion Engine effect
+        if self.occlusion_physics_mode == "none" or self.occlusion_mode == "none":
+            compensated_demand = torch.where(observed, raw_demand, torch.zeros_like(raw_demand))
             protected_mask = torch.zeros_like(observed)
-        elif self.occlusion_mode == "transmittance_only":
-            protected_mask = torch.logical_and(is_occluding, observed)
-        elif self.occlusion_mode == "depth_only":
-            protected_mask = torch.logical_and(is_high_depth_var, observed)
+            return compensated_demand, protected_mask
+
+        # Branch 2: "legacy" reproduces exact historical formula from commit f7d16da
+        elif self.occlusion_physics_mode == "legacy":
+            within_view_var = self.accum_depth_var / vis_counts
+            depth_var = torch.clamp(between_view_var + within_view_var, min=0.0)
+            depth_std = torch.sqrt(depth_var + self.depth_epsilon)
+            normalized_depth_fluctuation = depth_std / (float(scene_extent) + self.depth_epsilon)
+
+            if self.occlusion_mode == "full":
+                occlusion_signal = normalized_depth_fluctuation * (1.0 - mean_T)
+            elif self.occlusion_mode == "transmittance_only":
+                occlusion_signal = 1.0 - mean_T
+            elif self.occlusion_mode == "depth_only":
+                occlusion_signal = normalized_depth_fluctuation
+            else:
+                occlusion_signal = torch.zeros_like(mean_T)
+            occlusion_factor = 1.0 + self.gamma_occ * occlusion_signal
+            compensated_demand = torch.where(observed, raw_demand * occlusion_factor, torch.zeros_like(raw_demand))
+
+            is_high_depth_var = depth_std > (0.01 * float(scene_extent))
+            is_occluding = mean_T < self.transmittance_tau
+            if not self.enable_structure_protection:
+                protected_mask = torch.zeros_like(observed)
+            elif self.occlusion_mode == "transmittance_only":
+                protected_mask = torch.logical_and(is_occluding, observed)
+            elif self.occlusion_mode == "depth_only":
+                protected_mask = torch.logical_and(is_high_depth_var, observed)
+            else:
+                protected_mask = torch.logical_and(
+                    torch.logical_and(is_high_depth_var, is_occluding), observed
+                )
+            return compensated_demand, protected_mask
+
+        # Branch 3: "corrected" (default) uses dimensionally consistent multi-view depth variance
         else:
-            protected_mask = torch.logical_and(
-                torch.logical_and(is_high_depth_var, is_occluding), observed
+            depth_std = torch.sqrt(between_view_var)
+            normalized_depth_fluctuation = torch.clamp(
+                depth_std / (float(scene_extent) + self.depth_epsilon),
+                min=0.0,
+                max=1.0,
             )
 
-        return compensated_demand, protected_mask
+            if self.occlusion_mode == "full":
+                occlusion_signal = normalized_depth_fluctuation * (1.0 - mean_T)
+            elif self.occlusion_mode == "transmittance_only":
+                occlusion_signal = 1.0 - mean_T
+            elif self.occlusion_mode == "depth_only":
+                occlusion_signal = normalized_depth_fluctuation
+            else:
+                occlusion_signal = torch.zeros_like(mean_T)
+            occlusion_factor = 1.0 + self.gamma_occ * occlusion_signal
+            compensated_demand = torch.where(observed, raw_demand * occlusion_factor, torch.zeros_like(raw_demand))
+
+            is_high_depth_var = normalized_depth_fluctuation > 0.01
+            is_occluding = mean_T < self.transmittance_tau
+            if not self.enable_structure_protection:
+                protected_mask = torch.zeros_like(observed)
+            elif self.occlusion_mode == "transmittance_only":
+                protected_mask = torch.logical_and(is_occluding, observed)
+            elif self.occlusion_mode == "depth_only":
+                protected_mask = torch.logical_and(is_high_depth_var, observed)
+            else:
+                protected_mask = torch.logical_and(
+                    torch.logical_and(is_high_depth_var, is_occluding), observed
+                )
+            return compensated_demand, protected_mask
 
 
 class OcclusionAwareDemandEstimator:
@@ -229,8 +269,9 @@ class OcclusionAwareDemandEstimator:
             gain_clone: Marginal gain per byte for Clone (demand / cost_clone_bytes).
             gain_split: Marginal gain per byte for Split (demand / cost_split_bytes).
         """
-        depth_std = torch.sqrt(torch.clamp(depth_variance, min=0.0) + self.depth_epsilon)
-        depth_norm = depth_std / (torch.max(depth_std) + self.depth_epsilon)
+        depth_std = torch.sqrt(torch.clamp(depth_variance, min=0.0))
+        max_std = torch.max(depth_std)
+        depth_norm = torch.clamp(depth_std / (max_std + self.depth_epsilon), min=0.0, max=1.0)
 
         occlusion_weight = 1.0 + self.gamma_occlusion * depth_norm * (
             1.0 - torch.clamp(mean_transmittance, 0.0, 1.0)

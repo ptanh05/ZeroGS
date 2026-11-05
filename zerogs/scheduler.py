@@ -36,6 +36,7 @@ class MemoryBoundedDensificationScheduler:
         split_multiplier: float = 2.30,
         require_native_stats: bool = True,
         occlusion_mode: str = "full",
+        occlusion_physics_mode: str = "corrected",
         enable_structure_protection: bool = True,
         allocator_strategy: str = "gain_per_byte",
         gaussians_per_cycle_cap: int = 5000,
@@ -70,6 +71,7 @@ class MemoryBoundedDensificationScheduler:
             gamma_occ=gamma_occ,
             transmittance_tau=transmittance_tau,
             occlusion_mode=occlusion_mode,
+            occlusion_physics_mode=occlusion_physics_mode,
             enable_structure_protection=enable_structure_protection,
             device=device,
         )
@@ -150,21 +152,27 @@ class MemoryBoundedDensificationScheduler:
         percent_dense: float,
         size_threshold: Optional[float] = None,
         min_opacity_prune: float = 0.005,
+        max_world_size_ratio: float = 0.1,
+        iteration: int = 0,
+        last_opacity_reset_iteration: int = -999999,
+        tau_age: int = 0,
+        tau_reset: int = 0,
+        kappa_split: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Executes a deterministic Zero-OOM densification and pruning cycle:
         1. Occlusion Demand Estimation & Structure Protection.
         2. Candidate generation (Clone & Split).
-        3. Redundant pruning candidate detection.
-        4. Admission Control & Headroom verification.
-        5. Deterministic Prune-First (if required).
-        6. Marginal Gain / Byte Quota Selection.
-        7. Safe execution of densify_and_split and densify_and_clone.
-        8. Buffer reallocation for new Gaussian population.
+        3. Stage 1: Regular Hygiene Pruning (dead opacity + floaters when size_threshold active).
+        4. Stage 2: Admission Control & Prune-First (bottom utility excluding protected structures).
+        5. Marginal Gain / Byte Quota Selection (joint knapsack).
+        6. Safe execution of densify_and_clone and densify_and_split.
+        7. Buffer reallocation for new Gaussian population.
         """
         # 1. Occlusion Demand & Protected Mask
         self.occ_engine.grad_accum = self.viewspace_grad_accum
         demand, protected_mask = self.occ_engine.compute_compensated_demand(scene_extent=scene_extent)
+        demand = torch.nan_to_num(demand, nan=0.0, posinf=0.0, neginf=0.0)
 
         # 2. Identify Clone & Split candidates
         grads_high = self.viewspace_grad_accum >= densify_grad_threshold
@@ -174,20 +182,55 @@ class MemoryBoundedDensificationScheduler:
         clone_mask = torch.logical_and(grads_high, max_scales <= scale_limit)
         split_mask = torch.logical_and(grads_high, max_scales > scale_limit)
 
-        # 3. Identify Redundant Prune candidates
-        dead_opacity_mask = (gaussians.get_opacity < min_opacity_prune).squeeze()
-        prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
+        # 3. STAGE 1: REGULAR HYGIENE PRUNING (Always executed independently of admission!)
+        is_in_reset_cooldown = (iteration - last_opacity_reset_iteration) < tau_reset
+        raw_dead_opacity = (gaussians.get_opacity < min_opacity_prune).squeeze()
 
-        redundant_mask = torch.logical_or(dead_opacity_mask, prunable_utility)
-        if size_threshold is not None and hasattr(gaussians, "max_radii2D"):
-            too_large_mask = gaussians.max_radii2D > size_threshold
-            redundant_mask = torch.logical_or(redundant_mask, too_large_mask)
+        n_protected_by_cooldown = 0
+        n_protected_by_age = 0
 
-        prune_candidates_count = int(redundant_mask.sum().item())
+        if is_in_reset_cooldown:
+            # During reset cooldown, suspend only opacity-based Stage 1 eviction
+            n_protected_by_cooldown = int(raw_dead_opacity.sum().item())
+            dead_opacity_mask = torch.zeros(gaussians.get_xyz.shape[0], dtype=torch.bool, device=self.device)
+        else:
+            # Exempt young Gaussians from opacity eviction
+            if hasattr(gaussians, "birth_iteration") and gaussians.birth_iteration is not None and gaussians.birth_iteration.numel() > 0:
+                is_young = (iteration - gaussians.birth_iteration) < tau_age
+                n_protected_by_age = int((raw_dead_opacity & is_young).sum().item())
+                dead_opacity_mask = raw_dead_opacity & (~is_young)
+            else:
+                dead_opacity_mask = raw_dead_opacity
+
+        # Physical size/scale hygiene remains active unconditionally
+        hygiene_mask = dead_opacity_mask
+        if size_threshold is not None:
+            if hasattr(gaussians, "max_radii2D"):
+                hygiene_mask = torch.logical_or(hygiene_mask, gaussians.max_radii2D > size_threshold)
+            big_ws = max_scales > (max_world_size_ratio * scene_extent)
+            hygiene_mask = torch.logical_or(hygiene_mask, big_ws)
+
+        executed_hygiene_prune = 0
+        if hygiene_mask.any():
+            executed_hygiene_prune = int(hygiene_mask.sum().item())
+            gaussians.prune_points(hygiene_mask)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Synchronize candidate and auxiliary tensors after Stage 1 prune
+            surviving_1 = ~hygiene_mask
+            clone_mask = clone_mask[surviving_1]
+            split_mask = split_mask[surviving_1]
+            demand = demand[surviving_1]
+            protected_mask = protected_mask[surviving_1]
+
+        # 4. STAGE 2: ADMISSION CONTROL & OPTIONAL PRUNE-FIRST
         n_clone_req = int(clone_mask.sum().item())
         n_split_req = int(split_mask.sum().item())
 
-        # 4. Evaluate Admission
+        prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
+        prune_candidates_count = int(prunable_utility.sum().item())
+
         decision: AdmissionDecision = self.admission_controller.evaluate_admission(
             n_clone_requested=n_clone_req,
             n_split_requested=n_split_req,
@@ -195,31 +238,33 @@ class MemoryBoundedDensificationScheduler:
             prune_candidates_count=prune_candidates_count,
         )
 
-        # 5. Deterministic Prune-First
+        executed_pre_prune = 0
         if decision.action in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST]:
             k_prune = decision.required_pre_prune
-            redundant_indices = torch.where(redundant_mask)[0]
-            if len(redundant_indices) > 0 and k_prune > 0:
+            utility_indices = torch.where(prunable_utility)[0]
+            if len(utility_indices) > 0 and k_prune > 0:
                 # Evict primitives with lowest demand first
-                sorted_order = torch.argsort(demand[redundant_indices])
-                prune_indices = redundant_indices[sorted_order[:k_prune]]
+                sorted_order = torch.argsort(demand[utility_indices])
+                prune_indices = utility_indices[sorted_order[:k_prune]]
 
                 exec_prune_filter = torch.zeros(
                     gaussians.get_xyz.shape[0], dtype=torch.bool, device=self.device
                 )
                 exec_prune_filter[prune_indices] = True
                 gaussians.prune_points(exec_prune_filter)
+                executed_pre_prune = int(exec_prune_filter.sum().item())
 
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                # Adjust masks after tensor dimension shrinkage
-                surviving = ~exec_prune_filter
-                clone_mask = clone_mask[surviving]
-                split_mask = split_mask[surviving]
-                demand = demand[surviving]
+                # Adjust masks after Stage 2 tensor dimension shrinkage
+                surviving_2 = ~exec_prune_filter
+                clone_mask = clone_mask[surviving_2]
+                split_mask = split_mask[surviving_2]
+                demand = demand[surviving_2]
+                protected_mask = protected_mask[surviving_2]
 
-        # 6. Marginal Utility Allocation
+        # 5. Marginal Utility Allocation
         final_clone_mask, final_split_mask = self.allocator.joint_knapsack_allocate(
             demand=demand,
             clone_mask=clone_mask,
@@ -230,26 +275,37 @@ class MemoryBoundedDensificationScheduler:
                 self.gaussians_per_cycle_cap,
                 max(0, self.max_gaussians_cap - int(gaussians.get_xyz.shape[0])),
             ),
+            kappa_split=kappa_split,
         )
 
-        # 7. Safe Execution of Densification (Clone first, then Split)
+        # 6. Safe Execution of Densification (Clone first, then Split)
         n_clone_executed = int(final_clone_mask.sum().item())
         n_split_executed = int(final_split_mask.sum().item())
 
         if n_clone_executed > 0:
-            gaussians.densify_and_clone(final_clone_mask, densify_grad_threshold, scene_extent)
+            gaussians.densify_and_clone(final_clone_mask, densify_grad_threshold, scene_extent, iteration=iteration)
         if n_split_executed > 0:
-            gaussians.densify_and_split(final_split_mask, densify_grad_threshold, scene_extent)
+            gaussians.densify_and_split(final_split_mask, densify_grad_threshold, scene_extent, iteration=iteration)
 
-        # 8. Reset Buffers for New Population
+        # 7. Reset Buffers for New Population
         new_num_gaussians = gaussians.get_xyz.shape[0]
         self.occ_engine.reset_buffers(new_num_gaussians)
         self.viewspace_grad_accum = torch.zeros(new_num_gaussians, device=self.device)
 
+        alloc_stats = getattr(self.allocator, "last_allocation_stats", {})
         return {
             "decision": decision.to_dict(),
             "n_clone_executed": n_clone_executed,
             "n_split_executed": n_split_executed,
+            "executed_hygiene_prune": executed_hygiene_prune,
+            "executed_pre_prune": executed_pre_prune,
             "new_total_gaussians": new_num_gaussians,
             "protected_count": int(protected_mask.sum().item()),
+            "n_protected_by_age": n_protected_by_age,
+            "n_protected_by_cooldown": n_protected_by_cooldown,
+            "requested_split_share": alloc_stats.get("requested_split_share", 0.0),
+            "actual_split_share": alloc_stats.get("actual_split_share", 0.0),
+            "tau_age": tau_age,
+            "tau_reset": tau_reset,
+            "kappa_split": kappa_split,
         }

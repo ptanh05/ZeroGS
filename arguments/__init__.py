@@ -12,6 +12,13 @@
 from argparse import ArgumentParser, Namespace
 import ast
 import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import os
 
 
@@ -156,6 +163,15 @@ class OptimizationParams(ParamGroup):
         self.max_gaussians_cap = 1_000_000
         self.gaussians_per_iter_cap = 5_000
         self.policy_network_fallback = True
+        # ===== PV-SRA-3DGS V2: Grace-Aware Pruning & Split Quota =====
+        self.tau_age = 500
+        self.tau_reset = 400
+        self.kappa_split = 0.40
+        # ===== PV-SRA-3DGS V3: Dynamic VRAM-Aware Inflow Admission =====
+        self.inflow_mode = "dynamic"
+        self.inflow_cap_min = 5000
+        self.inflow_cap_max = 15000
+        self.target_headroom_mb = 1024.0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

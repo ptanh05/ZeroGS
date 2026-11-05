@@ -82,10 +82,11 @@ class GaussianModel:
         self.use_policy_network: bool = False
         self.gaussians_per_iter_cap: int = 5000
         self.max_gaussians_cap: int = 1_000_000
+        self.birth_iteration = torch.empty(0, dtype=torch.int32)
         self.setup_functions()
 
     def capture(self):
-        return (
+        base_tuple = (
             self.active_sh_degree,
             self._xyz,
             self._features_dc,
@@ -99,20 +100,47 @@ class GaussianModel:
             self.optimizer.state_dict() if self.optimizer is not None else None,
             self.spatial_lr_scale,
         )
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None and self.birth_iteration.numel() > 0:
+            return base_tuple + (self.birth_iteration,)
+        return base_tuple
     
     def restore(self, model_args, training_args=None):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
-        self._features_rest,
-        self._scaling, 
-        self._rotation, 
-        self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum, 
-        denom,
-        opt_dict, 
-        self.spatial_lr_scale) = model_args
+        if len(model_args) >= 13:
+            (self.active_sh_degree,
+            self._xyz,
+            self._features_dc,
+            self._features_rest,
+            self._scaling,
+            self._rotation,
+            self._opacity,
+            self.max_radii2D,
+            xyz_gradient_accum,
+            denom,
+            opt_dict,
+            self.spatial_lr_scale,
+            birth_data) = model_args[:13]
+            device = self._xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else "cpu"
+            n_pts = self._xyz.shape[0] if (hasattr(self, "_xyz") and self._xyz is not None) else 0
+            if birth_data is not None and birth_data.shape[0] == n_pts:
+                self.birth_iteration = birth_data.to(device=device, dtype=torch.int32)
+            else:
+                self.birth_iteration = torch.zeros(n_pts, dtype=torch.int32, device=device)
+        else:
+            (self.active_sh_degree,
+            self._xyz,
+            self._features_dc,
+            self._features_rest,
+            self._scaling,
+            self._rotation,
+            self._opacity,
+            self.max_radii2D,
+            xyz_gradient_accum,
+            denom,
+            opt_dict,
+            self.spatial_lr_scale) = model_args
+            device = self._xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else "cpu"
+            n_pts = self._xyz.shape[0] if (hasattr(self, "_xyz") and self._xyz is not None) else 0
+            self.birth_iteration = torch.zeros(n_pts, dtype=torch.int32, device=device)
         if training_args is not None:
             self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
@@ -211,6 +239,7 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=device)
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device=device)
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=device)
+        self.birth_iteration = torch.zeros(self.get_xyz.shape[0], dtype=torch.int32, device=device)
         self.tmp_radii = None
         self.pretrained_exposures = None
 
@@ -392,6 +421,7 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=device)
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device=device)
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=device)
+        self.birth_iteration = torch.zeros(self.get_xyz.shape[0], dtype=torch.int32, device=device)
         self.tmp_radii = None
         if not hasattr(self, "exposure_mapping") or self.exposure_mapping is None:
             self.exposure_mapping = {}
@@ -481,6 +511,8 @@ class GaussianModel:
 
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None and self.birth_iteration.numel() > 0:
+            self.birth_iteration = self.birth_iteration[valid_points_mask]
         if hasattr(self, "tmp_radii") and self.tmp_radii is not None:
             self.tmp_radii = self.tmp_radii[valid_points_mask]
 
@@ -518,7 +550,7 @@ class GaussianModel:
 
         return optimizable_tensors
 
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii=None):
+    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii=None, new_birth_iteration=None):
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
@@ -534,17 +566,25 @@ class GaussianModel:
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
 
+        device = self.get_xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else ("cuda" if torch.cuda.is_available() else "cpu")
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None and self.birth_iteration.numel() > 0:
+            if new_birth_iteration is not None:
+                self.birth_iteration = torch.cat((self.birth_iteration, new_birth_iteration.to(device=device, dtype=torch.int32)))
+            else:
+                self.birth_iteration = torch.cat((self.birth_iteration, torch.zeros(new_xyz.shape[0], dtype=torch.int32, device=device)))
+        else:
+            self.birth_iteration = torch.zeros(self.get_xyz.shape[0], dtype=torch.int32, device=device)
+
         if hasattr(self, "tmp_radii") and self.tmp_radii is not None and new_tmp_radii is not None:
             self.tmp_radii = torch.cat((self.tmp_radii, new_tmp_radii))
         else:
             self.tmp_radii = None
 
-        device = self.get_xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else ("cuda" if torch.cuda.is_available() else "cpu")
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device=device)
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device=device)
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device=device)
 
-    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+    def densify_and_split(self, grads, grad_threshold, scene_extent, N=2, iteration: int = 0):
         n_init_points = self.get_xyz.shape[0]
         device = self.get_xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else ("cuda" if torch.cuda.is_available() else "cpu")
         if grads.dtype == torch.bool:
@@ -578,15 +618,16 @@ class GaussianModel:
             if (hasattr(self, "tmp_radii") and self.tmp_radii is not None)
             else None
         )
+        new_birth_iteration = torch.full((new_xyz.shape[0],), fill_value=int(iteration), dtype=torch.int32, device=device)
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_tmp_radii)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_tmp_radii, new_birth_iteration=new_birth_iteration)
 
         prune_filter = torch.cat(
             (selected_pts_mask, torch.zeros(N * int(selected_pts_mask.sum().item()), device=device, dtype=torch.bool))
         )
         self.prune_points(prune_filter)
 
-    def densify_and_clone(self, grads, grad_threshold, scene_extent):
+    def densify_and_clone(self, grads, grad_threshold, scene_extent, iteration: int = 0):
         n_init_points = self.get_xyz.shape[0]
         device = self.get_xyz.device if (hasattr(self, "_xyz") and self._xyz is not None and self._xyz.numel() > 0) else ("cuda" if torch.cuda.is_available() else "cpu")
         if grads.dtype == torch.bool:
@@ -615,8 +656,9 @@ class GaussianModel:
             if (hasattr(self, "tmp_radii") and self.tmp_radii is not None)
             else None
         )
+        new_birth_iteration = torch.full((new_xyz.shape[0],), fill_value=int(iteration), dtype=torch.int32, device=device)
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii, new_birth_iteration=new_birth_iteration)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, radii=None, max_world_size_ratio=0.1):
         grads = self.xyz_gradient_accum / self.denom

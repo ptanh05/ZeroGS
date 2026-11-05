@@ -41,6 +41,7 @@ class MockGaussianModel:
         self.max_radii2D = torch.zeros(num_points, device=self.device)
         self.xyz_gradient_accum = torch.zeros(num_points, 1, device=self.device)
         self.denom = torch.ones(num_points, 1, device=self.device)
+        self.birth_iteration = torch.zeros(num_points, dtype=torch.int32, device=self.device)
 
         # Setup Optimizer with Adam states
         self.setup_optimizer()
@@ -133,6 +134,8 @@ class MockGaussianModel:
         self.max_radii2D = self.max_radii2D[valid_points_mask]
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
         self.denom = self.denom[valid_points_mask]
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None and self.birth_iteration.numel() > 0:
+            self.birth_iteration = self.birth_iteration[valid_points_mask]
 
         # Rebuild optimizer states for surviving points
         for group in self.optimizer.param_groups:
@@ -162,6 +165,7 @@ class MockGaussianModel:
         grads: torch.Tensor,
         grad_threshold: float,
         scene_extent: float,
+        iteration: int = 0,
     ) -> None:
         """
         Duplicates points matching clone mask.
@@ -201,6 +205,9 @@ class MockGaussianModel:
             [self.xyz_gradient_accum, torch.zeros(n_new, 1, device=self.device)]
         )
         self.denom = torch.cat([self.denom, torch.ones(n_new, 1, device=self.device)])
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None:
+            new_birth = torch.full((n_new,), fill_value=int(iteration), dtype=torch.int32, device=self.device)
+            self.birth_iteration = torch.cat([self.birth_iteration, new_birth])
 
         # Extend optimizer states with zeros for newly cloned points
         for group in self.optimizer.param_groups:
@@ -236,6 +243,7 @@ class MockGaussianModel:
         grad_threshold: float,
         scene_extent: float,
         N: int = 2,
+        iteration: int = 0,
     ) -> None:
         """
         Splits high-gradient points into N child points (default 2), then prunes the parent points.
@@ -288,6 +296,9 @@ class MockGaussianModel:
             [self.xyz_gradient_accum, torch.zeros(n_children, 1, device=self.device)]
         )
         self.denom = torch.cat([self.denom, torch.ones(n_children, 1, device=self.device)])
+        if hasattr(self, "birth_iteration") and self.birth_iteration is not None:
+            new_birth = torch.full((n_children,), fill_value=int(iteration), dtype=torch.int32, device=self.device)
+            self.birth_iteration = torch.cat([self.birth_iteration, new_birth])
 
         # Extend optimizer states for all children
         for group in self.optimizer.param_groups:
@@ -351,6 +362,7 @@ class MockGaussianModel:
             "opacity": self._opacity.data,
             "features_dc": self._features_dc.data,
             "features_rest": self._features_rest.data,
+            "birth_iteration": getattr(self, "birth_iteration", torch.zeros(self._xyz.shape[0], dtype=torch.int32, device=self.device)),
         }
 
     def save_ply(self, path: str) -> None:
@@ -371,6 +383,10 @@ class MockGaussianModel:
         self._opacity.data = model_params["opacity"]
         self._features_dc.data = model_params["features_dc"]
         self._features_rest.data = model_params["features_rest"]
+        if "birth_iteration" in model_params:
+            self.birth_iteration = model_params["birth_iteration"].to(self.device)
+        else:
+            self.birth_iteration = torch.zeros(self._xyz.shape[0], dtype=torch.int32, device=self.device)
 
 
 class MockCamera:
