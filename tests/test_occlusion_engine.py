@@ -66,8 +66,11 @@ def test_stateless_demand_estimator():
     assert gain_clone[0] > gain_split[0]
 
 
-def test_native_within_view_depth_variance_affects_protection():
-    engine = OcclusionAwareEngine(num_gaussians=2, gamma_occ=0.35, device="cpu")
+def test_single_view_observation_has_zero_depth_variance_and_is_not_protected():
+    """Under corrected physics, V=1 has zero multi-view depth variance and must not be protected."""
+    engine = OcclusionAwareEngine(
+        num_gaussians=2, gamma_occ=0.35, occlusion_physics_mode="corrected", device="cpu"
+    )
     indices = torch.tensor([0, 1])
     engine.update_per_view_stats(
         indices,
@@ -77,6 +80,70 @@ def test_native_within_view_depth_variance_affects_protection():
     )
     engine.grad_accum = torch.ones(2)
     demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    # Between-view depth variance is 0.0 for V=1; screen-space footprint is excluded.
+    assert protected.tolist() == [False, False]
+    # Occlusion factor is 1.0 for both primitives
+    assert torch.isclose(demand[0], demand[1])
+
+
+def test_legacy_occlusion_physics_reproduces_within_view_variance():
+    """Under legacy physics, within-view footprint is added and triggers protection on V=1."""
+    engine = OcclusionAwareEngine(
+        num_gaussians=2, gamma_occ=0.35, occlusion_physics_mode="legacy", device="cpu"
+    )
+    indices = torch.tensor([0, 1])
+    engine.update_per_view_stats(
+        indices,
+        torch.tensor([2.0, 2.0]),
+        torch.tensor([0.1, 0.1]),
+        view_depth_variance=torch.tensor([1.0, 0.0]),
+    )
+    engine.grad_accum = torch.ones(2)
+    demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    # Legacy physics adds within_view_var (1.0) -> Point 0 is protected even with V=1!
+    assert protected.tolist() == [True, False]
+    assert demand[0] > demand[1]
+
+
+def test_none_occlusion_physics_mode_disables_all_effects():
+    """Under occlusion_physics_mode='none', demand is raw and protected_mask is all False."""
+    engine = OcclusionAwareEngine(
+        num_gaussians=2, gamma_occ=0.35, occlusion_physics_mode="none", device="cpu"
+    )
+    indices = torch.tensor([0, 1])
+    engine.update_per_view_stats(
+        indices,
+        torch.tensor([2.0, 4.0]),
+        torch.tensor([0.05, 0.05]),
+        view_depth_variance=torch.tensor([5.0, 5.0]),
+    )
+    engine.grad_accum = torch.tensor([2.0, 3.0])
+    demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    assert protected.tolist() == [False, False]
+    # Raw demand: grad * vis_counts (vis_counts = 1)
+    assert torch.allclose(demand, torch.tensor([2.0, 3.0]))
+
+
+def test_multi_view_depth_variance_protects_structure():
+    """Multi-view observation (V>=2) with depth variation across views triggers protection."""
+    engine = OcclusionAwareEngine(num_gaussians=2, gamma_occ=0.35, device="cpu")
+    indices = torch.tensor([0, 1])
+    # View 1
+    engine.update_per_view_stats(
+        indices,
+        torch.tensor([2.0, 2.0]),
+        torch.tensor([0.1, 0.9]),
+    )
+    # View 2: index 0 has depth shift (2.0 -> 4.0), index 1 stays at 2.0
+    engine.update_per_view_stats(
+        indices,
+        torch.tensor([4.0, 2.0]),
+        torch.tensor([0.1, 0.9]),
+    )
+    engine.grad_accum = torch.ones(2)
+    demand, protected = engine.compute_compensated_demand(scene_extent=10.0)
+    # Index 0 has multi-view depth variance (Var=1.0) and low transmittance (0.1 < 0.25) -> protected
+    # Index 1 has zero depth variance and high transmittance (0.9 > 0.25) -> not protected
     assert protected.tolist() == [True, False]
     assert demand[0] > demand[1]
 
@@ -112,14 +179,47 @@ def test_occlusion_ablation_modes_are_supported(mode):
         enable_structure_protection=True,
         device="cpu",
     )
+    # View 1
     engine.update_per_view_stats(
         torch.tensor([0, 1]),
         torch.tensor([1.0, 1.0]),
         torch.tensor([0.1, 0.9]),
-        torch.tensor([1.0, 0.0]),
+    )
+    # View 2: index 0 depth shifts (1.0 -> 3.0)
+    engine.update_per_view_stats(
+        torch.tensor([0, 1]),
+        torch.tensor([3.0, 1.0]),
+        torch.tensor([0.1, 0.9]),
     )
     engine.grad_accum = torch.ones(2)
     demand, protected = engine.compute_compensated_demand(10.0)
     assert torch.isfinite(demand).all()
     if mode == "none":
         assert protected.sum().item() == 0
+
+
+def test_update_per_view_stats_detaches_autograd_graph():
+    """Verify that tensors with requires_grad=True do not leak autograd graphs into accumulators."""
+    engine = OcclusionAwareEngine(num_gaussians=5, device="cpu")
+    leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
+    depths = leaf * 2.0  # has grad_fn
+    vis_idx = torch.tensor([0, 1, 2])
+    T = torch.tensor([0.5, 0.5, 0.5], requires_grad=True)
+    var = torch.tensor([0.1, 0.1, 0.1], requires_grad=True)
+
+    engine.update_per_view_stats(
+        visible_indices=vis_idx,
+        view_depths=depths,
+        view_transmittance=T,
+        view_depth_variance=var,
+    )
+
+    # Accumulation buffers must NOT have requires_grad=True or grad_fn
+    assert not engine.accum_depth.requires_grad
+    assert engine.accum_depth.grad_fn is None
+    assert not engine.accum_depth_sq.requires_grad
+    assert engine.accum_depth_sq.grad_fn is None
+    assert not engine.accum_T.requires_grad
+    assert engine.accum_T.grad_fn is None
+    assert not engine.accum_depth_var.requires_grad
+    assert engine.accum_depth_var.grad_fn is None
