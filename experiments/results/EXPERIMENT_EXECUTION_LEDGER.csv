@@ -1,0 +1,11 @@
+experiment_id,method_name,scene,seed,population_cap,iterations,final_gaussians,psnr_30k,ssim_30k,lpips_30k,peak_device_vram_mb,duration_seconds,exit_code,status,output_path
+V_ref,V_ref,bonsai,0,none,30000,1235390,29.5857,0.9276,0.1796,7656.0,1956.3,0,completed,output/benchmark_bonsai_V_ref
+A0,A0,bonsai,0,none,30000,671650,31.6183,0.9402,0.1707,7180.0,1896.96,0,completed,output/benchmark_bonsai_A0
+A1,A1,bonsai,0,1000000,30000,364854,19.05,0.6752,0.5129,7490.0,885.21,0,completed,output/benchmark_bonsai_A1
+A2,A2,bonsai,0,none,30000,486051,30.0896,0.9197,0.2034,7202.0,1392.66,0,completed,output/benchmark_bonsai_A2
+A3,A3,bonsai,0,1000000,30000,346693,19.0984,0.6771,0.5046,6906.0,902.44,0,completed,output/benchmark_bonsai_A3
+A1_G,A1_G,bonsai,0,1000000,30000,341157,20.4626,0.7027,0.4751,7254.0,947.44,0,completed,output/benchmark_bonsai_A1_G
+A3_G,A3_G,bonsai,0,1000000,30000,345363,20.0687,0.6967,0.477,6945.0,953.71,0,completed,output/benchmark_bonsai_A3_G
+A1_V3,A1_V3,bonsai,0,1000000,30000,1000000,22.5269,0.7378,0.4086,7441.0,1414.9,0,completed,output/benchmark_bonsai_A1_V3
+A3_V3,A3_V3,bonsai,0,1000000,30000,1000000,22.4454,0.7299,0.4098,7320.0,1489.42,0,completed,output/benchmark_bonsai_A3_V3
+A1_V4_P1,A1_V4_P1,bonsai,0,1150000,30000,1106240,22.8399,0.743,0.3975,7414.0,1428.83,0,completed,output/benchmark_bonsai_A1_V4_P1

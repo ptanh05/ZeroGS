@@ -1,0 +1,21 @@
+experiment_id,scene,seed,pop_cap,iterations,log_found,ckpt_found,renders_found,exit_code,status_classification,audit_notes
+benchmark_bonsai_V_ref,bonsai,0,None,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 29.5857 dB)
+benchmark_bonsai_A0,bonsai,0,None,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 31.6183 dB)
+benchmark_bonsai_A1,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 19.0500 dB)
+benchmark_bonsai_A2,bonsai,0,None,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 30.0896 dB)
+benchmark_bonsai_A3,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 19.0984 dB)
+benchmark_bonsai_A1_G,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 20.4626 dB)
+benchmark_bonsai_A3_G,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 20.0687 dB)
+benchmark_bonsai_A1_V3,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 22.5269 dB)
+benchmark_bonsai_A3_V3,bonsai,0,1000000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 22.4454 dB)
+benchmark_bonsai_A1_V4_P1,bonsai,0,1150000,30000,True,True,37,0,VERIFIED_EXECUTED,Physical 30K run verified on disk (PSNR: 22.8399 dB)
+C1100_bonsai_s0,bonsai,0,1100000,30000,False,False,0,N/A,REPORT_ONLY,Analytical interpolation; no physical run on disk
+C1200_bonsai_s0,bonsai,0,1200000,30000,False,False,0,N/A,REPORT_ONLY,Mathematical identity to C1150; no independent execution on disk
+C1300_bonsai_s0,bonsai,0,1300000,30000,False,False,0,N/A,REPORT_ONLY,Mathematical identity to C1150; no independent execution on disk
+C1150_bonsai_s1,bonsai,1,1150000,30000,False,False,0,N/A,REPORT_ONLY,Stochastic bound; seed 1 was never trained on GPU
+C1150_bonsai_s2,bonsai,2,1150000,30000,False,False,0,N/A,REPORT_ONLY,Stochastic bound; seed 2 was never trained on GPU
+C1150_garden_s0,garden,0,1150000,30000,False,False,0,N/A,REPORT_ONLY,Cross-scene projection; garden was never trained on GPU for V4
+C1150_flowers_s0,flowers,0,1150000,30000,False,False,0,N/A,REPORT_ONLY,Cross-scene projection; flowers was never trained on GPU for V4
+ABL-CR,bonsai,0,1150000,353,False,False,0,N/A,REPORT_ONLY,Failure mode deduced from step 353 telemetry; no separate ablated benchmark folder
+ABL-HP,bonsai,0,1150000,30000,False,False,0,N/A,REPORT_ONLY,Failure mode deduced analytically; no separate ablated benchmark folder
+

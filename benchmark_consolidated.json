@@ -1,0 +1,674 @@
+{
+  "V_ref": {
+    "run": "V_ref",
+    "dir": "output/benchmark_bonsai_V_ref",
+    "verif": {
+      "experiment": "V_ref",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 1956.3,
+      "throughput_it_per_sec": 15.34,
+      "peak_device_memory_mb": 7656.0,
+      "ply_final_gaussians": 1235390,
+      "telemetry_final_gaussians": 1235390,
+      "telemetry_memory": {
+        "allocated_bytes": 2956536320,
+        "allocated_mb": 2819.573,
+        "conservative_footprint_bytes": 4647288832,
+        "conservative_footprint_mb": 4432.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 4089628160,
+        "peak_allocated_mb": 3900.173,
+        "peak_reserved_bytes": 4685037568,
+        "peak_reserved_mb": 4468.0,
+        "reserved_bytes": 4647288832,
+        "reserved_mb": 4432.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 24.866271508706582,
+        "SSIM": 0.8601465048016729,
+        "LPIPS": 0.28874731869310943,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 29.585728980399466,
+        "SSIM": 0.927636981010437,
+        "LPIPS": 0.17956922384532722,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 1101129,
+      "total_splits": 576830,
+      "total_hygiene_pruned": 649182,
+      "total_pre_pruned": 0,
+      "total_protected_by_age": 0,
+      "total_protected_by_cooldown": 0,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 8192.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 0,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 0,
+          "total_evaluations": 0,
+          "total_pruned_via_admission": 0
+        },
+        "event": "training_end",
+        "final_gaussians": 1235390,
+        "memory": {
+          "allocated_bytes": 2956536320,
+          "allocated_mb": 2819.573,
+          "conservative_footprint_bytes": 4647288832,
+          "conservative_footprint_mb": 4432.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 4089628160,
+          "peak_allocated_mb": 3900.173,
+          "peak_reserved_bytes": 4685037568,
+          "peak_reserved_mb": 4468.0,
+          "reserved_bytes": 4647288832,
+          "reserved_mb": 4432.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A0": {
+    "run": "A0",
+    "dir": "output/benchmark_bonsai_A0",
+    "verif": {
+      "experiment": "A0",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 1896.96,
+      "throughput_it_per_sec": 15.81,
+      "peak_device_memory_mb": 7180.0,
+      "ply_final_gaussians": 671650,
+      "telemetry_final_gaussians": 671650,
+      "telemetry_memory": {
+        "allocated_bytes": 2487012864,
+        "allocated_mb": 2371.8,
+        "conservative_footprint_bytes": 4167041024,
+        "conservative_footprint_mb": 3974.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 3219962368,
+        "peak_allocated_mb": 3070.795,
+        "peak_reserved_bytes": 4167041024,
+        "peak_reserved_mb": 3974.0,
+        "reserved_bytes": 4167041024,
+        "reserved_mb": 3974.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 26.016650071015228,
+        "SSIM": 0.8168132675660623,
+        "LPIPS": 0.3374971900437329,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 31.618309381845837,
+        "SSIM": 0.9402126524899457,
+        "LPIPS": 0.1706628596057763,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 379766,
+      "total_splits": 297789,
+      "total_hygiene_pruned": 0,
+      "total_pre_pruned": 212518,
+      "total_protected_by_age": 0,
+      "total_protected_by_cooldown": 0,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 1,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 1,
+          "total_evaluations": 146,
+          "total_pruned_via_admission": 212518
+        },
+        "event": "training_end",
+        "final_gaussians": 671650,
+        "memory": {
+          "allocated_bytes": 2487012864,
+          "allocated_mb": 2371.8,
+          "conservative_footprint_bytes": 4167041024,
+          "conservative_footprint_mb": 3974.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 3219962368,
+          "peak_allocated_mb": 3070.795,
+          "peak_reserved_bytes": 4167041024,
+          "peak_reserved_mb": 3974.0,
+          "reserved_bytes": 4167041024,
+          "reserved_mb": 3974.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A1": {
+    "run": "A1",
+    "dir": "output/benchmark_bonsai_A1",
+    "verif": {
+      "experiment": "A1",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 885.21,
+      "throughput_it_per_sec": 33.89,
+      "peak_device_memory_mb": 7490.0,
+      "ply_final_gaussians": 364854,
+      "telemetry_final_gaussians": 364854,
+      "telemetry_memory": {
+        "allocated_bytes": 2219492864,
+        "allocated_mb": 2116.673,
+        "conservative_footprint_bytes": 2980052992,
+        "conservative_footprint_mb": 2842.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 2551418880,
+        "peak_allocated_mb": 2433.223,
+        "peak_reserved_bytes": 3038773248,
+        "peak_reserved_mb": 2898.0,
+        "reserved_bytes": 2980052992,
+        "reserved_mb": 2842.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 10.387364903011838,
+        "SSIM": 0.19356612498695785,
+        "LPIPS": 0.6005464534501772,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 19.04999052511679,
+        "SSIM": 0.6752441887919968,
+        "LPIPS": 0.5129142645243052,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 540266,
+      "total_splits": 123379,
+      "total_hygiene_pruned": 505404,
+      "total_pre_pruned": 0,
+      "total_protected_by_age": 0,
+      "total_protected_by_cooldown": 0,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 0,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 0,
+          "total_evaluations": 144,
+          "total_pruned_via_admission": 0
+        },
+        "event": "training_end",
+        "final_gaussians": 364854,
+        "memory": {
+          "allocated_bytes": 2219492864,
+          "allocated_mb": 2116.673,
+          "conservative_footprint_bytes": 2980052992,
+          "conservative_footprint_mb": 2842.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 2551418880,
+          "peak_allocated_mb": 2433.223,
+          "peak_reserved_bytes": 3038773248,
+          "peak_reserved_mb": 2898.0,
+          "reserved_bytes": 2980052992,
+          "reserved_mb": 2842.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A2": {
+    "run": "A2",
+    "dir": "output/benchmark_bonsai_A2",
+    "verif": {
+      "experiment": "A2",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 1392.66,
+      "throughput_it_per_sec": 21.54,
+      "peak_device_memory_mb": 7202.0,
+      "ply_final_gaussians": 486051,
+      "telemetry_final_gaussians": 486051,
+      "telemetry_memory": {
+        "allocated_bytes": 2329303552,
+        "allocated_mb": 2221.397,
+        "conservative_footprint_bytes": 3802136576,
+        "conservative_footprint_mb": 3626.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 2785274880,
+        "peak_allocated_mb": 2656.245,
+        "peak_reserved_bytes": 3802136576,
+        "peak_reserved_mb": 3626.0,
+        "reserved_bytes": 3802136576,
+        "reserved_mb": 3626.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 25.091748572684622,
+        "SSIM": 0.7965436142844122,
+        "LPIPS": 0.362432015908731,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 30.08957527779244,
+        "SSIM": 0.9196560850014558,
+        "LPIPS": 0.20344648328987328,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 401095,
+      "total_splits": 275984,
+      "total_hygiene_pruned": 0,
+      "total_pre_pruned": 397641,
+      "total_protected_by_age": 0,
+      "total_protected_by_cooldown": 0,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 1,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 2,
+          "total_evaluations": 147,
+          "total_pruned_via_admission": 397641
+        },
+        "event": "training_end",
+        "final_gaussians": 486051,
+        "memory": {
+          "allocated_bytes": 2329303552,
+          "allocated_mb": 2221.397,
+          "conservative_footprint_bytes": 3802136576,
+          "conservative_footprint_mb": 3626.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 2785274880,
+          "peak_allocated_mb": 2656.245,
+          "peak_reserved_bytes": 3802136576,
+          "peak_reserved_mb": 3626.0,
+          "reserved_bytes": 3802136576,
+          "reserved_mb": 3626.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A3": {
+    "run": "A3",
+    "dir": "output/benchmark_bonsai_A3",
+    "verif": {
+      "experiment": "A3",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 902.44,
+      "throughput_it_per_sec": 33.24,
+      "peak_device_memory_mb": 6906.0,
+      "ply_final_gaussians": 346693,
+      "telemetry_final_gaussians": 346693,
+      "telemetry_memory": {
+        "allocated_bytes": 2209164800,
+        "allocated_mb": 2106.824,
+        "conservative_footprint_bytes": 2912944128,
+        "conservative_footprint_mb": 2778.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 2529640960,
+        "peak_allocated_mb": 2412.454,
+        "peak_reserved_bytes": 2912944128,
+        "peak_reserved_mb": 2778.0,
+        "reserved_bytes": 2912944128,
+        "reserved_mb": 2778.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 10.460990995974154,
+        "SSIM": 0.2004722554135967,
+        "LPIPS": 0.5997093996486148,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 19.09841047750937,
+        "SSIM": 0.6770518212705046,
+        "LPIPS": 0.5046254114524739,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 538760,
+      "total_splits": 125238,
+      "total_hygiene_pruned": 523918,
+      "total_pre_pruned": 0,
+      "total_protected_by_age": 0,
+      "total_protected_by_cooldown": 0,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 0,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 0,
+          "total_evaluations": 144,
+          "total_pruned_via_admission": 0
+        },
+        "event": "training_end",
+        "final_gaussians": 346693,
+        "memory": {
+          "allocated_bytes": 2209164800,
+          "allocated_mb": 2106.824,
+          "conservative_footprint_bytes": 2912944128,
+          "conservative_footprint_mb": 2778.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 2529640960,
+          "peak_allocated_mb": 2412.454,
+          "peak_reserved_bytes": 2912944128,
+          "peak_reserved_mb": 2778.0,
+          "reserved_bytes": 2912944128,
+          "reserved_mb": 2778.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A1_G": {
+    "run": "A1_G",
+    "dir": "output/benchmark_bonsai_A1_G",
+    "verif": {
+      "experiment": "A1_G",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 947.44,
+      "throughput_it_per_sec": 31.66,
+      "peak_device_memory_mb": 7254.0,
+      "ply_final_gaussians": 341157,
+      "telemetry_final_gaussians": 341157,
+      "telemetry_memory": {
+        "allocated_bytes": 2204612096,
+        "allocated_mb": 2102.482,
+        "conservative_footprint_bytes": 2975858688,
+        "conservative_footprint_mb": 2838.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 2522674176,
+        "peak_allocated_mb": 2405.81,
+        "peak_reserved_bytes": 2975858688,
+        "peak_reserved_mb": 2838.0,
+        "reserved_bytes": 2975858688,
+        "reserved_mb": 2838.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 11.26526149543556,
+        "SSIM": 0.24352517603216944,
+        "LPIPS": 0.5899149485536523,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 20.46255230259251,
+        "SSIM": 0.702717521706143,
+        "LPIPS": 0.47505589353071676,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 414074,
+      "total_splits": 263861,
+      "total_hygiene_pruned": 543391,
+      "total_pre_pruned": 0,
+      "total_protected_by_age": 10526,
+      "total_protected_by_cooldown": 149631,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 0,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 0,
+          "total_evaluations": 144,
+          "total_pruned_via_admission": 0
+        },
+        "event": "training_end",
+        "final_gaussians": 341157,
+        "memory": {
+          "allocated_bytes": 2204612096,
+          "allocated_mb": 2102.482,
+          "conservative_footprint_bytes": 2975858688,
+          "conservative_footprint_mb": 2838.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 2522674176,
+          "peak_allocated_mb": 2405.81,
+          "peak_reserved_bytes": 2975858688,
+          "peak_reserved_mb": 2838.0,
+          "reserved_bytes": 2975858688,
+          "reserved_mb": 2838.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  },
+  "A3_G": {
+    "run": "A3_G",
+    "dir": "output/benchmark_bonsai_A3_G",
+    "verif": {
+      "experiment": "A3_G",
+      "return_code": 0,
+      "training_status": "completed",
+      "oom": false,
+      "budget_violation": false,
+      "duration_seconds": 953.71,
+      "throughput_it_per_sec": 31.46,
+      "peak_device_memory_mb": 6945.0,
+      "ply_final_gaussians": 345363,
+      "telemetry_final_gaussians": 345363,
+      "telemetry_memory": {
+        "allocated_bytes": 2209612800,
+        "allocated_mb": 2107.251,
+        "conservative_footprint_bytes": 2808086528,
+        "conservative_footprint_mb": 2678.0,
+        "device_index": 0,
+        "peak_allocated_bytes": 2529710080,
+        "peak_allocated_mb": 2412.52,
+        "peak_reserved_bytes": 2871001088,
+        "peak_reserved_mb": 2738.0,
+        "reserved_bytes": 2808086528,
+        "reserved_mb": 2678.0,
+        "total_device_bytes": 8546484224,
+        "total_device_mb": 8150.562
+      },
+      "eval_7k": {
+        "PSNR": 11.28776336360622,
+        "SSIM": 0.23426916148211505,
+        "LPIPS": 0.597316973918193,
+        "num_views": 37
+      },
+      "eval_30k": {
+        "PSNR": 20.06873945287756,
+        "SSIM": 0.6967149264103657,
+        "LPIPS": 0.4770223466125694,
+        "num_views": 37
+      },
+      "image_validation_7k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "image_validation_30k": {
+        "valid": true,
+        "count": 37,
+        "nan_inf_found": false,
+        "out_of_range": false
+      },
+      "git": {
+        "commit": "26787a86ae012431170343211b22949f07936308",
+        "dirty": true
+      }
+    },
+    "telemetry": {
+      "num_cycles": 144,
+      "total_clones": 409901,
+      "total_splits": 268065,
+      "total_hygiene_pruned": 539216,
+      "total_pre_pruned": 0,
+      "total_protected_by_age": 20138,
+      "total_protected_by_cooldown": 155666,
+      "end_event": {
+        "admission": {
+          "hard_vram_limit_mb": 6144.0,
+          "non_pytorch_allowance_mb": 256.0,
+          "prune_first_triggered": 0,
+          "safety_headroom_mb": 512.0,
+          "shrink_triggered": 0,
+          "total_evaluations": 144,
+          "total_pruned_via_admission": 0
+        },
+        "event": "training_end",
+        "final_gaussians": 345363,
+        "memory": {
+          "allocated_bytes": 2209612800,
+          "allocated_mb": 2107.251,
+          "conservative_footprint_bytes": 2808086528,
+          "conservative_footprint_mb": 2678.0,
+          "device_index": 0,
+          "peak_allocated_bytes": 2529710080,
+          "peak_allocated_mb": 2412.52,
+          "peak_reserved_bytes": 2871001088,
+          "peak_reserved_mb": 2738.0,
+          "reserved_bytes": 2808086528,
+          "reserved_mb": 2678.0,
+          "total_device_bytes": 8546484224,
+          "total_device_mb": 8150.562
+        }
+      }
+    }
+  }
+}
