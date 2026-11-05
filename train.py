@@ -11,6 +11,7 @@ import os
 import sys
 import json
 import platform
+import subprocess
 import uuid
 from argparse import ArgumentParser, Namespace
 from random import randint
@@ -182,6 +183,7 @@ def training(
         gamma_occ=gamma_occ,
         transmittance_tau=transmittance_tau,
         occlusion_mode=occlusion_mode,
+        occlusion_physics_mode=getattr(opt, "occlusion_physics_mode", "corrected"),
         enable_structure_protection=enable_structure_protection,
         device=device,
     )
@@ -190,6 +192,7 @@ def training(
     # Accumulation buffers between densification intervals
     num_pts = gaussians.get_xyz.shape[0]
     accum_visibility = torch.zeros(num_pts, dtype=torch.int32, device=device)
+    accum_pixel_footprint = torch.zeros(num_pts, dtype=torch.int32, device=device)
     accum_transmittance = torch.zeros(num_pts, dtype=torch.float32, device=device)
     accum_depth_var = torch.zeros(num_pts, dtype=torch.float32, device=device)
     viewspace_point_tensor_grad = torch.zeros(num_pts, device=device)
@@ -244,6 +247,12 @@ def training(
     # =========================================================================
     # MAIN TRAINING LOOP
     # =========================================================================
+    last_opacity_reset_iteration = -999999
+    if first_iter > 0:
+        last_opacity_reset_iteration = (first_iter // opt.opacity_reset_interval) * opt.opacity_reset_interval
+        if getattr(dataset, "white_background", False) and first_iter >= opt.densify_from_iter and last_opacity_reset_iteration < opt.densify_from_iter:
+            last_opacity_reset_iteration = opt.densify_from_iter
+
     for iteration in range(first_iter, opt.iterations + 1):
         if not is_simulation and network_gui.conn is not None:
             try:
@@ -311,36 +320,55 @@ def training(
         cur_depth_var = render_pkg.get("depth_var", render_pkg.get("depth_variance", None))
         cur_vis_count = render_pkg.get("vis_count", None)
 
+        in_frustum_mask = None
+        has_pixels_mask = None
+        gradient_mask_mode = getattr(opt, "gradient_mask_mode", "canonical")
+        if not enable_zero_oom:
+            gradient_mask_mode = "canonical"
+
         if iteration < opt.densify_until_iter:
-            active_mask = (cur_vis_count > 0) if cur_vis_count is not None else (radii > 0 if radii is not None else visibility_filter)
-            if active_mask is not None and active_mask.numel() > 0:
-                if active_mask.dim() > 1:
-                    active_mask = active_mask.squeeze()
-                vis_inc = cur_vis_count[active_mask] if cur_vis_count is not None else 1
-                accum_visibility[active_mask] += vis_inc
-                if cur_mean_T is not None:
-                    accum_transmittance[active_mask] += cur_mean_T[active_mask]
-                if cur_depth_var is not None:
-                    accum_depth_var[active_mask] += cur_depth_var[active_mask]
+            with torch.no_grad():
+                in_frustum_mask = (radii > 0) if radii is not None else visibility_filter
+                if in_frustum_mask is not None and in_frustum_mask.dim() > 1:
+                    in_frustum_mask = in_frustum_mask.squeeze()
 
-                # Update physics stats in Occlusion Engine
-                if hasattr(viewpoint_cam, "world_view_transform"):
-                    R_z = viewpoint_cam.world_view_transform[2, :3].to(device)
-                    t_z = viewpoint_cam.world_view_transform[2, 3].to(device)
-                    view_depths = (gaussians.get_xyz[active_mask] @ R_z) + t_z
-                else:
-                    view_depths = torch.norm(gaussians.get_xyz[active_mask], dim=-1)
+                has_pixels_mask = (cur_vis_count > 0) if cur_vis_count is not None else in_frustum_mask
+                if has_pixels_mask is not None and has_pixels_mask.dim() > 1:
+                    has_pixels_mask = has_pixels_mask.squeeze()
 
-                T_vals = cur_mean_T[active_mask] if cur_mean_T is not None else torch.ones_like(view_depths)
-                vis_indices = torch.where(active_mask)[0]
-                occ_engine.update_per_view_stats(
-                    visible_indices=vis_indices,
-                    view_depths=view_depths,
-                    view_transmittance=T_vals,
-                    view_depth_variance=(
-                        cur_depth_var[active_mask] if cur_depth_var is not None else None
-                    ),
-                )
+                # Denominator visibility accumulation:
+                # - Canonical: increments for all primitives in camera frustum (radii > 0)
+                # - Contribution-aware: increments only for primitives with >= 1 contributing pixel
+                dens_denom_mask = in_frustum_mask if gradient_mask_mode == "canonical" else has_pixels_mask
+                if dens_denom_mask is not None and dens_denom_mask.numel() > 0:
+                    accum_visibility[dens_denom_mask] += 1
+
+                if has_pixels_mask is not None and has_pixels_mask.numel() > 0:
+                    if cur_vis_count is not None:
+                        accum_pixel_footprint[has_pixels_mask] += cur_vis_count[has_pixels_mask]
+                    if cur_mean_T is not None:
+                        accum_transmittance[has_pixels_mask] += cur_mean_T[has_pixels_mask]
+                    if cur_depth_var is not None:
+                        accum_depth_var[has_pixels_mask] += cur_depth_var[has_pixels_mask]
+
+                    # Update physics stats in Occlusion Engine
+                    if hasattr(viewpoint_cam, "world_view_transform"):
+                        R_z = viewpoint_cam.world_view_transform[2, :3].to(device)
+                        t_z = viewpoint_cam.world_view_transform[2, 3].to(device)
+                        view_depths = (gaussians.get_xyz[has_pixels_mask].detach() @ R_z) + t_z
+                    else:
+                        view_depths = torch.norm(gaussians.get_xyz[has_pixels_mask].detach(), dim=-1)
+
+                    T_vals = cur_mean_T[has_pixels_mask] if cur_mean_T is not None else torch.ones_like(view_depths)
+                    vis_indices = torch.where(has_pixels_mask)[0]
+                    occ_engine.update_per_view_stats(
+                        visible_indices=vis_indices,
+                        view_depths=view_depths,
+                        view_transmittance=T_vals,
+                        view_depth_variance=(
+                            cur_depth_var[has_pixels_mask] if cur_depth_var is not None else None
+                        ),
+                    )
 
         # ---------------------------------------------------------------------
         # LOSS & BACKWARD PASS
@@ -352,7 +380,10 @@ def training(
 
         if enable_zero_oom and not is_simulation:
             try:
-                admission_ctrl.assert_current_memory_within_budget()
+                admission_ctrl.assert_current_memory_within_budget(
+                    telemetry_writer=telemetry_writer,
+                    iteration=iteration,
+                )
             except VramBudgetExceededError:
                 if telemetry_writer is not None:
                     telemetry_writer.write(
@@ -383,12 +414,12 @@ def training(
                 progress_bar.close()
 
             # Viewspace gradient norm accumulation
-            # Viewspace gradient norm accumulation
-            if visibility_filter is not None and viewspace_point_tensor.grad is not None:
-                vis_mask = visibility_filter.squeeze() if visibility_filter.dim() > 1 else visibility_filter
-                viewspace_point_tensor_grad[vis_mask] += torch.norm(
-                    viewspace_point_tensor.grad[vis_mask, :2], dim=-1
-                )
+            if viewspace_point_tensor.grad is not None:
+                dens_num_mask = in_frustum_mask if gradient_mask_mode == "canonical" else has_pixels_mask
+                if dens_num_mask is not None and dens_num_mask.numel() > 0:
+                    viewspace_point_tensor_grad[dens_num_mask] += torch.norm(
+                        viewspace_point_tensor.grad[dens_num_mask, :2], dim=-1
+                    )
 
             # -----------------------------------------------------------------
             # ZERO-OOM ADAPTIVE DENSIFICATION & PRUNING CYCLE
@@ -405,154 +436,462 @@ def training(
                         torch.cuda.synchronize()
                         torch.cuda.reset_peak_memory_stats()
                     mutation_memory_before = capture_cuda_memory()
-                    # a. Compute Occlusion-Aware Demand & Protected Structure Mask (Gap S1)
-                    occ_engine.grad_accum = viewspace_point_tensor_grad
-                    demand, protected_mask = occ_engine.compute_compensated_demand(scene_extent=scene_extent)
-                    demand = torch.nan_to_num(demand, nan=0.0, posinf=0.0, neginf=0.0)
+                    pruning_mode = getattr(opt, "pruning_mode", "decoupled")
+                    tau_age = getattr(opt, "tau_age", 500)
+                    tau_reset = getattr(opt, "tau_reset", 400)
+                    kappa_split = getattr(opt, "kappa_split", 0.40)
+                    inflow_mode = getattr(opt, "inflow_mode", "dynamic")
+                    inflow_cap_min = getattr(opt, "inflow_cap_min", 5000)
+                    inflow_cap_max = getattr(opt, "inflow_cap_max", 15000)
+                    target_headroom_mb = getattr(opt, "target_headroom_mb", 1024.0)
 
-                    # b. Identify Candidates for Clone & Split (Normalized by Visibility Count)
-                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    denom = torch.clamp(accum_visibility.float(), min=1.0)
-                    avg_grad = viewspace_point_tensor_grad / denom
-                    grads_high = avg_grad >= opt.densify_grad_threshold
-                    scale_limit = opt.percent_dense * scene_extent
+                    if not enable_zero_oom:
+                        # -------------------------------------------------------------
+                        # VANILLA 3DGS BASELINE PATH (V_ref: Clone -> Split -> Prune)
+                        # No Admission Controller, No Allocator Quotas, No Population Caps
+                        # -------------------------------------------------------------
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        denom = torch.clamp(accum_visibility.float(), min=1.0)
+                        avg_grad = viewspace_point_tensor_grad / denom
+                        grads_high = avg_grad >= opt.densify_grad_threshold
+                        scale_limit = opt.percent_dense * scene_extent
 
-                    clone_mask = torch.logical_and(
-                        grads_high,
-                        torch.max(gaussians.get_scaling, dim=1).values <= scale_limit,
-                    )
-                    split_mask = torch.logical_and(
-                        grads_high,
-                        torch.max(gaussians.get_scaling, dim=1).values > scale_limit,
-                    )
+                        clone_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values <= scale_limit,
+                        )
+                        split_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values > scale_limit,
+                        )
 
-                    # c. Identify Pruning Candidates (Excluding Protected Structures!)
-                    dead_opacity_mask = (gaussians.get_opacity < 0.005).squeeze()
-                    prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
+                        n_clone_executed = int(clone_mask.sum().item())
+                        n_split_executed = int(split_mask.sum().item())
+                        if n_clone_executed > 0:
+                            gaussians.densify_and_clone(clone_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
+                        if n_split_executed > 0:
+                            gaussians.densify_and_split(split_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
 
-                    redundant_mask = torch.logical_or(dead_opacity_mask, prunable_utility)
-                    if size_threshold and hasattr(gaussians, "max_radii2D"):
-                        too_large_mask = gaussians.max_radii2D > size_threshold
-                        redundant_mask = torch.logical_or(redundant_mask, too_large_mask)
+                        min_opacity_prune = getattr(opt, "min_opacity_prune", 0.005)
+                        prune_mask = (gaussians.get_opacity < min_opacity_prune).squeeze()
+                        if size_threshold is not None:
+                            if hasattr(gaussians, "max_radii2D"):
+                                big_points_vs = gaussians.max_radii2D > size_threshold
+                                prune_mask = torch.logical_or(prune_mask, big_points_vs)
+                            max_world_size_ratio = getattr(opt, "max_world_size_ratio", 0.1)
+                            big_points_ws = torch.max(gaussians.get_scaling, dim=1).values > (max_world_size_ratio * scene_extent)
+                            prune_mask = torch.logical_or(prune_mask, big_points_ws)
 
-                    prune_candidates_count = int(redundant_mask.sum().item())
-                    n_clone_req = int(clone_mask.sum().item())
-                    n_split_req = int(split_mask.sum().item())
+                        executed_prune = int(prune_mask.sum().item())
+                        if executed_prune > 0:
+                            gaussians.prune_points(prune_mask)
 
-                    # d. Evaluate Admission via Admission Controller (Gaps P1 + P2 + D2 + S3)
-                    if enable_zero_oom:
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                            torch.cuda.empty_cache()
+
+                        mutation_memory_after = capture_cuda_memory()
+                        if telemetry_writer is not None:
+                            telemetry_writer.write(
+                                "mutation_cycle",
+                                iteration=iteration,
+                                decision={"action": "VANILLA_BASELINE", "n_clone": n_clone_executed, "n_split": n_split_executed, "required_pre_prune": 0},
+                                executed_pre_prune=0,
+                                executed_hygiene_prune=executed_prune,
+                                n_clone_executed=n_clone_executed,
+                                n_split_executed=n_split_executed,
+                                memory_before=mutation_memory_before.to_dict(),
+                                memory_after=mutation_memory_after.to_dict(),
+                                raster_stats_available=bool(render_pkg.get("stats_available", False)),
+                                allocator_strategy="vanilla",
+                                occlusion_mode="none",
+                                structure_protection=False,
+                                mutation_item_cap=None,
+                            )
+
+                    elif pruning_mode == "legacy_as_is":
+                        # -------------------------------------------------------------
+                        # LEGACY ZERO-GS ABLATION PATH (A0: Coupling bug preserved)
+                        # -------------------------------------------------------------
+                        occ_engine.grad_accum = viewspace_point_tensor_grad
+                        demand, protected_mask = occ_engine.compute_compensated_demand(scene_extent=scene_extent)
+                        demand = torch.nan_to_num(demand, nan=0.0, posinf=0.0, neginf=0.0)
+
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        denom = torch.clamp(accum_visibility.float(), min=1.0)
+                        avg_grad = viewspace_point_tensor_grad / denom
+                        grads_high = avg_grad >= opt.densify_grad_threshold
+                        scale_limit = opt.percent_dense * scene_extent
+
+                        clone_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values <= scale_limit,
+                        )
+                        split_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values > scale_limit,
+                        )
+
+                        dead_opacity_mask = (gaussians.get_opacity < 0.005).squeeze()
+                        prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
+
+                        redundant_mask = torch.logical_or(dead_opacity_mask, prunable_utility)
+                        if size_threshold and hasattr(gaussians, "max_radii2D"):
+                            too_large_mask = gaussians.max_radii2D > size_threshold
+                            redundant_mask = torch.logical_or(redundant_mask, too_large_mask)
+
+                        prune_candidates_count = int(redundant_mask.sum().item())
+                        n_clone_req = int(clone_mask.sum().item())
+                        n_split_req = int(split_mask.sum().item())
+
+                        inflow_cap_min = getattr(opt, "inflow_cap_min", 5000)
+                        inflow_cap_max = getattr(opt, "inflow_cap_max", 15000)
+                        target_headroom_mb = getattr(opt, "target_headroom_mb", 1024.0)
+                        inflow_mode = getattr(opt, "inflow_mode", "dynamic")
+
                         decision = admission_ctrl.evaluate_admission(
                             n_clone_requested=n_clone_req,
                             n_split_requested=n_split_req,
                             current_num_gaussians=gaussians.get_xyz.shape[0],
                             prune_candidates_count=prune_candidates_count,
+                            inflow_cap_min=inflow_cap_min,
+                            inflow_cap_max=inflow_cap_max,
+                            target_headroom_mb=target_headroom_mb,
+                            kappa_split=kappa_split,
+                            inflow_mode=inflow_mode,
                         )
-                    else:
-                        decision = {
-                            "action": "ACCEPT",
-                            "n_clone": n_clone_req,
-                            "n_split": n_split_req,
-                            "required_pre_prune": 0,
-                        }
 
-                    dec_action = decision.action if hasattr(decision, "action") else decision["action"]
-                    dec_k_prune = decision.required_pre_prune if hasattr(decision, "required_pre_prune") else decision["required_pre_prune"]
-                    dec_n_clone = decision.n_clone if hasattr(decision, "n_clone") else decision["n_clone"]
-                    dec_n_split = decision.n_split if hasattr(decision, "n_split") else decision["n_split"]
-                    allocation_decision = decision
-                    executed_pre_prune = 0
+                        dec_action = decision.action if hasattr(decision, "action") else decision["action"]
+                        dec_k_prune = decision.required_pre_prune if hasattr(decision, "required_pre_prune") else decision["required_pre_prune"]
+                        dec_n_clone = decision.n_clone if hasattr(decision, "n_clone") else decision["n_clone"]
+                        dec_n_split = decision.n_split if hasattr(decision, "n_split") else decision["n_split"]
+                        allocation_decision = decision
+                        executed_pre_prune = 0
 
-                    # e. DETERMINISTIC PRUNE-FIRST (Clear VRAM headroom BEFORE allocating new primitives)
-                    if dec_action in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST, "PRUNE_FIRST", "SHRINK_AND_PRUNE_FIRST"]:
-                        k_prune = dec_k_prune
-                        redundant_indices = torch.where(redundant_mask)[0]
-                        if len(redundant_indices) > 0 and k_prune > 0:
-                            sorted_by_demand = redundant_indices[torch.argsort(demand[redundant_indices])]
-                            exec_prune_indices = sorted_by_demand[:k_prune]
+                        if dec_action in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST, "PRUNE_FIRST", "SHRINK_AND_PRUNE_FIRST"]:
+                            k_prune = dec_k_prune
+                            redundant_indices = torch.where(redundant_mask)[0]
+                            if len(redundant_indices) > 0 and k_prune > 0:
+                                sorted_by_demand = redundant_indices[torch.argsort(demand[redundant_indices])]
+                                exec_prune_indices = sorted_by_demand[:k_prune]
 
-                            exec_prune_mask = torch.zeros(
-                                gaussians.get_xyz.shape[0], dtype=torch.bool, device=device
+                                exec_prune_mask = torch.zeros(
+                                    gaussians.get_xyz.shape[0], dtype=torch.bool, device=device
+                                )
+                                exec_prune_mask[exec_prune_indices] = True
+                                gaussians.prune_points(exec_prune_mask)
+                                executed_pre_prune = int(exec_prune_mask.sum().item())
+
+                                if torch.cuda.is_available():
+                                    torch.cuda.synchronize()
+                                    torch.cuda.empty_cache()
+
+                                surviving = ~exec_prune_mask
+                                clone_mask = clone_mask[surviving]
+                                split_mask = split_mask[surviving]
+                                demand = demand[surviving]
+
+                                post_prune_decision = admission_ctrl.evaluate_admission(
+                                    n_clone_requested=dec_n_clone,
+                                    n_split_requested=dec_n_split,
+                                    current_num_gaussians=gaussians.get_xyz.shape[0],
+                                    prune_candidates_count=0,
+                                    inflow_cap_min=getattr(opt, "inflow_cap_min", 5000),
+                                    inflow_cap_max=getattr(opt, "inflow_cap_max", 15000),
+                                    target_headroom_mb=getattr(opt, "target_headroom_mb", 1024.0),
+                                    kappa_split=getattr(opt, "kappa_split", 0.40),
+                                    inflow_mode=getattr(opt, "inflow_mode", "dynamic"),
+                                )
+                                dec_n_clone = post_prune_decision.n_clone
+                                dec_n_split = post_prune_decision.n_split
+                                allocation_decision = post_prune_decision
+
+                        remaining_population_cap = max(
+                            0, max_gaussians_cap - int(gaussians.get_xyz.shape[0])
+                        )
+                        inflow_mode = getattr(opt, "inflow_mode", "dynamic")
+                        if inflow_mode == "dynamic" and hasattr(allocation_decision, "dynamic_inflow") and allocation_decision.dynamic_inflow:
+                            effective_inflow_cap = allocation_decision.dynamic_inflow.get("computed_cap", gaussians_per_iter_cap)
+                        else:
+                            effective_inflow_cap = gaussians_per_iter_cap
+
+                        mutation_item_cap = min(
+                            effective_inflow_cap,
+                            remaining_population_cap,
+                        )
+                        kappa_split = getattr(opt, "kappa_split", 0.40)
+                        if hasattr(allocation_decision, "transient_cost_bytes"):
+                            final_clone_mask, final_split_mask = allocator.joint_knapsack_allocate(
+                                demand=demand,
+                                clone_mask=clone_mask,
+                                split_mask=split_mask,
+                                max_transient_bytes=allocation_decision.mutation_budget_bytes,
+                                strategy=allocator_strategy,
+                                max_items=mutation_item_cap,
+                                kappa_split=kappa_split,
                             )
-                            exec_prune_mask[exec_prune_indices] = True
-                            gaussians.prune_points(exec_prune_mask)
-                            executed_pre_prune = int(exec_prune_mask.sum().item())
+                        else:
+                            final_clone_mask, final_split_mask = allocator.allocate(
+                                demand=demand,
+                                clone_mask=clone_mask,
+                                split_mask=split_mask,
+                                n_clone_quota=dec_n_clone,
+                                n_split_quota=dec_n_split,
+                            )
 
+                        if final_clone_mask.sum() > 0:
+                            gaussians.densify_and_clone(final_clone_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
+                        if final_split_mask.sum() > 0:
+                            gaussians.densify_and_split(final_split_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
+
+                        mutation_memory_after = capture_cuda_memory()
+                        if telemetry_writer is not None:
+                            telemetry_writer.write(
+                                "mutation_cycle",
+                                iteration=iteration,
+                                decision=decision.to_dict() if hasattr(decision, "to_dict") else decision,
+                                executed_pre_prune=executed_pre_prune,
+                                n_clone_executed=int(final_clone_mask.sum().item()),
+                                n_split_executed=int(final_split_mask.sum().item()),
+                                memory_before=mutation_memory_before.to_dict(),
+                                memory_after=mutation_memory_after.to_dict(),
+                                raster_stats_available=bool(render_pkg.get("stats_available", False)),
+                                allocator_strategy=allocator_strategy,
+                                occlusion_mode=occlusion_mode,
+                                structure_protection=enable_structure_protection,
+                                mutation_item_cap=mutation_item_cap,
+                            )
+
+                    else:
+                        # -------------------------------------------------------------
+                        # DECOUPLED TWO-STAGE PRUNING PATH (Default ZeroGS)
+                        # Stage 1: Regular Hygiene Pruning (Always executed)
+                        # Stage 2: Admission Utility Pruning (Only if budget requires)
+                        # -------------------------------------------------------------
+                        # a. Compute Occlusion-Aware Demand & Protected Structure Mask
+                        occ_engine.grad_accum = viewspace_point_tensor_grad
+                        demand, protected_mask = occ_engine.compute_compensated_demand(scene_extent=scene_extent)
+                        demand = torch.nan_to_num(demand, nan=0.0, posinf=0.0, neginf=0.0)
+
+                        # b. Identify Candidates for Clone & Split
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        denom = torch.clamp(accum_visibility.float(), min=1.0)
+                        avg_grad = viewspace_point_tensor_grad / denom
+                        grads_high = avg_grad >= opt.densify_grad_threshold
+                        scale_limit = opt.percent_dense * scene_extent
+
+                        clone_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values <= scale_limit,
+                        )
+                        split_mask = torch.logical_and(
+                            grads_high,
+                            torch.max(gaussians.get_scaling, dim=1).values > scale_limit,
+                        )
+
+                        # c. STAGE 1: REGULAR HYGIENE PRUNING (Always executed independently of admission!)
+                        min_opacity_prune = getattr(opt, "min_opacity_prune", 0.005)
+                        tau_age = getattr(opt, "tau_age", 500)
+                        tau_reset = getattr(opt, "tau_reset", 400)
+
+                        is_in_reset_cooldown = (iteration - last_opacity_reset_iteration) < tau_reset
+                        raw_dead_opacity = (gaussians.get_opacity < min_opacity_prune).squeeze()
+
+                        n_protected_by_cooldown = 0
+                        n_protected_by_age = 0
+
+                        if is_in_reset_cooldown:
+                            # Feature B: Opacity reset cooldown suspends only opacity-based Stage 1 eviction
+                            n_protected_by_cooldown = int(raw_dead_opacity.sum().item())
+                            dead_opacity_mask = torch.zeros(gaussians.get_xyz.shape[0], dtype=torch.bool, device=device)
+                        else:
+                            # Feature A: Primitive age grace exempts young Gaussians from opacity eviction
+                            if hasattr(gaussians, "birth_iteration") and gaussians.birth_iteration is not None and gaussians.birth_iteration.numel() > 0:
+                                is_young = (iteration - gaussians.birth_iteration) < tau_age
+                                n_protected_by_age = int((raw_dead_opacity & is_young).sum().item())
+                                dead_opacity_mask = raw_dead_opacity & (~is_young)
+                            else:
+                                dead_opacity_mask = raw_dead_opacity
+
+                        # Physical size/scale hygiene remains unconditionally operational
+                        hygiene_mask = dead_opacity_mask
+                        if size_threshold is not None:
+                            if hasattr(gaussians, "max_radii2D"):
+                                hygiene_mask = torch.logical_or(hygiene_mask, gaussians.max_radii2D > size_threshold)
+                            max_world_size_ratio = getattr(opt, "max_world_size_ratio", 0.1)
+                            big_ws = torch.max(gaussians.get_scaling, dim=1).values > (max_world_size_ratio * scene_extent)
+                            hygiene_mask = torch.logical_or(hygiene_mask, big_ws)
+
+                        executed_hygiene_prune = 0
+                        if hygiene_mask.any():
+                            executed_hygiene_prune = int(hygiene_mask.sum().item())
+                            gaussians.prune_points(hygiene_mask)
                             if torch.cuda.is_available():
                                 torch.cuda.synchronize()
                                 torch.cuda.empty_cache()
 
-                            # Critical: adjust masks after tensor shrinkage to prevent IndexError
-                            surviving = ~exec_prune_mask
-                            clone_mask = clone_mask[surviving]
-                            split_mask = split_mask[surviving]
-                            demand = demand[surviving]
+                            # Synchronize all auxiliary and candidate tensors to surviving primitives
+                            surviving_1 = ~hygiene_mask
+                            clone_mask = clone_mask[surviving_1]
+                            split_mask = split_mask[surviving_1]
+                            demand = demand[surviving_1]
+                            protected_mask = protected_mask[surviving_1]
 
-                            # Never trust modeled freed bytes blindly. Re-measure allocator
-                            # headroom after pruning and shrink/reject again if required.
-                            post_prune_decision = admission_ctrl.evaluate_admission(
-                                n_clone_requested=dec_n_clone,
-                                n_split_requested=dec_n_split,
-                                current_num_gaussians=gaussians.get_xyz.shape[0],
-                                prune_candidates_count=0,
+                        # d. STAGE 2: ADMISSION CONTROL & OPTIONAL PRUNE-FIRST
+                        n_clone_req = int(clone_mask.sum().item())
+                        n_split_req = int(split_mask.sum().item())
+
+                        prunable_utility = bottom_utility_mask(demand, protected_mask, fraction=0.05)
+                        prune_candidates_count = int(prunable_utility.sum().item())
+
+                        decision = admission_ctrl.evaluate_admission(
+                            n_clone_requested=n_clone_req,
+                            n_split_requested=n_split_req,
+                            current_num_gaussians=gaussians.get_xyz.shape[0],
+                            prune_candidates_count=prune_candidates_count,
+                            inflow_cap_min=inflow_cap_min,
+                            inflow_cap_max=inflow_cap_max,
+                            target_headroom_mb=target_headroom_mb,
+                            kappa_split=kappa_split,
+                            inflow_mode=inflow_mode,
+                        )
+
+                        dec_action = decision.action if hasattr(decision, "action") else decision["action"]
+                        dec_k_prune = decision.required_pre_prune if hasattr(decision, "required_pre_prune") else decision["required_pre_prune"]
+                        dec_n_clone = decision.n_clone if hasattr(decision, "n_clone") else decision["n_clone"]
+                        dec_n_split = decision.n_split if hasattr(decision, "n_split") else decision["n_split"]
+                        allocation_decision = decision
+                        executed_pre_prune = 0
+
+                        if dec_action in [AdmissionAction.PRUNE_FIRST, AdmissionAction.SHRINK_AND_PRUNE_FIRST, "PRUNE_FIRST", "SHRINK_AND_PRUNE_FIRST"]:
+                            k_prune = dec_k_prune
+                            utility_indices = torch.where(prunable_utility)[0]
+                            if len(utility_indices) > 0 and k_prune > 0:
+                                sorted_by_demand = utility_indices[torch.argsort(demand[utility_indices])]
+                                exec_prune_indices = sorted_by_demand[:k_prune]
+
+                                exec_prune_mask = torch.zeros(
+                                    gaussians.get_xyz.shape[0], dtype=torch.bool, device=device
+                                )
+                                exec_prune_mask[exec_prune_indices] = True
+                                gaussians.prune_points(exec_prune_mask)
+                                executed_pre_prune = int(exec_prune_mask.sum().item())
+
+                                if torch.cuda.is_available():
+                                    torch.cuda.synchronize()
+                                    torch.cuda.empty_cache()
+
+                                surviving_2 = ~exec_prune_mask
+                                clone_mask = clone_mask[surviving_2]
+                                split_mask = split_mask[surviving_2]
+                                demand = demand[surviving_2]
+                                protected_mask = protected_mask[surviving_2]
+
+                                post_prune_decision = admission_ctrl.evaluate_admission(
+                                    n_clone_requested=dec_n_clone,
+                                    n_split_requested=dec_n_split,
+                                    current_num_gaussians=gaussians.get_xyz.shape[0],
+                                    prune_candidates_count=0,
+                                    inflow_cap_min=inflow_cap_min,
+                                    inflow_cap_max=inflow_cap_max,
+                                    target_headroom_mb=target_headroom_mb,
+                                    kappa_split=kappa_split,
+                                    inflow_mode=inflow_mode,
+                                )
+                                dec_n_clone = post_prune_decision.n_clone
+                                dec_n_split = post_prune_decision.n_split
+                                allocation_decision = post_prune_decision
+
+                        # e. ALLOCATION (Joint Knapsack or Quota)
+                        remaining_population_cap = max(
+                            0, max_gaussians_cap - int(gaussians.get_xyz.shape[0])
+                        )
+                        if inflow_mode == "dynamic" and hasattr(allocation_decision, "dynamic_inflow") and allocation_decision.dynamic_inflow:
+                            effective_inflow_cap = allocation_decision.dynamic_inflow.get("computed_cap", gaussians_per_iter_cap)
+                        else:
+                            effective_inflow_cap = gaussians_per_iter_cap
+
+                        mutation_item_cap = min(
+                            effective_inflow_cap,
+                            remaining_population_cap,
+                        )
+                        if hasattr(allocation_decision, "transient_cost_bytes"):
+                            final_clone_mask, final_split_mask = allocator.joint_knapsack_allocate(
+                                demand=demand,
+                                clone_mask=clone_mask,
+                                split_mask=split_mask,
+                                max_transient_bytes=allocation_decision.mutation_budget_bytes,
+                                strategy=allocator_strategy,
+                                max_items=mutation_item_cap,
+                                kappa_split=kappa_split,
                             )
-                            dec_n_clone = post_prune_decision.n_clone
-                            dec_n_split = post_prune_decision.n_split
-                            allocation_decision = post_prune_decision
+                        else:
+                            final_clone_mask, final_split_mask = allocator.allocate(
+                                demand=demand,
+                                clone_mask=clone_mask,
+                                split_mask=split_mask,
+                                n_clone_quota=dec_n_clone,
+                                n_split_quota=dec_n_split,
+                            )
 
-                    # f. Allocate Quotas via Marginal Gain / Byte (Gap P3)
-                    remaining_population_cap = max(
-                        0, max_gaussians_cap - int(gaussians.get_xyz.shape[0])
-                    )
-                    mutation_item_cap = min(
-                        gaussians_per_iter_cap,
-                        remaining_population_cap,
-                    )
-                    if hasattr(allocation_decision, "transient_cost_bytes"):
-                        final_clone_mask, final_split_mask = allocator.joint_knapsack_allocate(
-                            demand=demand,
-                            clone_mask=clone_mask,
-                            split_mask=split_mask,
-                            max_transient_bytes=allocation_decision.mutation_budget_bytes,
-                            strategy=allocator_strategy,
-                            max_items=mutation_item_cap,
-                        )
-                    else:
-                        final_clone_mask, final_split_mask = allocator.allocate(
-                            demand=demand,
-                            clone_mask=clone_mask,
-                            split_mask=split_mask,
-                            n_clone_quota=dec_n_clone,
-                            n_split_quota=dec_n_split,
-                        )
+                        # f. EXECUTE DENSIFICATION (Clone first, then Split)
+                        if final_clone_mask.sum() > 0:
+                            gaussians.densify_and_clone(final_clone_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
+                        if final_split_mask.sum() > 0:
+                            gaussians.densify_and_split(final_split_mask, opt.densify_grad_threshold, scene_extent, iteration=iteration)
 
-                    # g. Safely Execute Densification (Clone first, then Split)
-                    if final_clone_mask.sum() > 0:
-                        gaussians.densify_and_clone(final_clone_mask, opt.densify_grad_threshold, scene_extent)
-                    if final_split_mask.sum() > 0:
-                        gaussians.densify_and_split(final_split_mask, opt.densify_grad_threshold, scene_extent)
-
-                    mutation_memory_after = capture_cuda_memory()
-                    if telemetry_writer is not None:
-                        telemetry_writer.write(
-                            "mutation_cycle",
-                            iteration=iteration,
-                            decision=decision.to_dict() if hasattr(decision, "to_dict") else decision,
-                            executed_pre_prune=executed_pre_prune,
-                            n_clone_executed=int(final_clone_mask.sum().item()),
-                            n_split_executed=int(final_split_mask.sum().item()),
-                            memory_before=mutation_memory_before.to_dict(),
-                            memory_after=mutation_memory_after.to_dict(),
-                            raster_stats_available=bool(render_pkg.get("stats_available", False)),
-                            allocator_strategy=allocator_strategy,
-                            occlusion_mode=occlusion_mode,
-                            structure_protection=enable_structure_protection,
-                            mutation_item_cap=mutation_item_cap,
-                        )
+                        mutation_memory_after = capture_cuda_memory()
+                        alloc_stats = getattr(allocator, "last_allocation_stats", {})
+                        pop_before = int(mutation_memory_before.num_gaussians) if hasattr(mutation_memory_before, "num_gaussians") else int(mutation_memory_before.get("num_gaussians", 0)) if isinstance(mutation_memory_before, dict) else int(gaussians.get_xyz.shape[0])
+                        pop_after = int(gaussians.get_xyz.shape[0])
+                        n_newborn = int(final_clone_mask.sum().item()) + int(final_split_mask.sum().item())
+                        if telemetry_writer is not None:
+                            inflow_data = getattr(decision, "dynamic_inflow", None) or {}
+                            if not inflow_data and hasattr(allocation_decision, "dynamic_inflow"):
+                                inflow_data = getattr(allocation_decision, "dynamic_inflow", None) or {}
+                            telemetry_writer.write(
+                                "mutation_cycle",
+                                iteration=iteration,
+                                population_before=pop_before,
+                                population_after=pop_after,
+                                n_newborn=n_newborn,
+                                n_protected_by_age=n_protected_by_age,
+                                n_protected_by_cooldown=n_protected_by_cooldown,
+                                decision=decision.to_dict() if hasattr(decision, "to_dict") else decision,
+                                executed_pre_prune=executed_pre_prune,
+                                executed_hygiene_prune=executed_hygiene_prune,
+                                n_clone_executed=int(final_clone_mask.sum().item()),
+                                n_split_executed=int(final_split_mask.sum().item()),
+                                requested_split_share=alloc_stats.get("requested_split_share", 0.0),
+                                actual_split_share=alloc_stats.get("actual_split_share", 0.0),
+                                tau_age=tau_age,
+                                tau_reset=tau_reset,
+                                kappa_split=kappa_split,
+                                memory_before=mutation_memory_before.to_dict(),
+                                memory_after=mutation_memory_after.to_dict(),
+                                raster_stats_available=bool(render_pkg.get("stats_available", False)),
+                                allocator_strategy=allocator_strategy,
+                                occlusion_mode=occlusion_mode,
+                                structure_protection=enable_structure_protection,
+                                mutation_item_cap=mutation_item_cap,
+                                inflow_mode=inflow_mode,
+                                current_memory_footprint_mb=inflow_data.get("current_footprint_mb", round(mutation_memory_before.conservative_footprint_bytes / (1024**2), 2)),
+                                available_headroom_mb=inflow_data.get("available_headroom_mb", 0.0),
+                                estimated_bytes_per_clone=inflow_data.get("estimated_bytes_per_clone", 0),
+                                estimated_bytes_per_split=inflow_data.get("estimated_bytes_per_split", 0),
+                                computed_dynamic_cap=int(effective_inflow_cap),
+                                requested_candidates=int(n_clone_req + n_split_req),
+                                accepted_candidates=int(final_clone_mask.sum().item() + final_split_mask.sum().item()),
+                                rejected_by_cap=max(0, int(n_clone_req + n_split_req) - int(effective_inflow_cap)),
+                                rejected_by_memory_budget=inflow_data.get("rejected_by_budget", 0),
+                                controller_budget_violations=0,
+                            )
 
                     # h. Reset Accumulators for New Population
                     new_pts = gaussians.get_xyz.shape[0]
                     occ_engine.reset_buffers(new_pts)
                     accum_visibility = torch.zeros(new_pts, dtype=torch.int32, device=device)
+                    accum_pixel_footprint = torch.zeros(new_pts, dtype=torch.int32, device=device)
                     accum_transmittance = torch.zeros(new_pts, dtype=torch.float32, device=device)
                     accum_depth_var = torch.zeros(new_pts, dtype=torch.float32, device=device)
                     viewspace_point_tensor_grad = torch.zeros(new_pts, device=device)
@@ -562,6 +901,7 @@ def training(
                     getattr(dataset, "white_background", False) and iteration == opt.densify_from_iter
                 ):
                     gaussians.reset_opacity()
+                    last_opacity_reset_iteration = iteration
 
             # Optimizer step
             gaussians.optimizer.step()
@@ -569,6 +909,14 @@ def training(
             if opacity_optimizer is not None:
                 opacity_optimizer.step()
                 opacity_optimizer.zero_grad(set_to_none=True)
+
+            # Free per-iteration tensors
+            render_pkg = None
+            image = None
+            loss = None
+            Ll1 = None
+            ssim_value = None
+            gt_image = None
 
             if iteration in saving_iterations:
                 print(f"\n[ITER {iteration}] Saving Gaussians")
@@ -587,6 +935,15 @@ def training(
                 if save_dir and hasattr(gaussians, "capture"):
                     os.makedirs(save_dir, exist_ok=True)
                     torch.save((gaussians.capture(), iteration), os.path.join(save_dir, f"chkpnt{iteration}.pth"))
+
+    if opt.iterations not in saving_iterations:
+        print(f"\n[ZeroGS] Saving final model at iteration {opt.iterations}")
+        if scene is not None:
+            scene.save(opt.iterations)
+        elif hasattr(gaussians, "save_ply") and dataset.model_path:
+            pc_path = os.path.join(dataset.model_path, f"point_cloud/iteration_{opt.iterations}")
+            os.makedirs(pc_path, exist_ok=True)
+            gaussians.save_ply(os.path.join(pc_path, "point_cloud.ply"))
 
     print("\n[ZeroGS] Training completed successfully.")
     print(f"[ZeroGS] Telemetry: {admission_ctrl.get_telemetry()}")
@@ -628,9 +985,27 @@ def build_parser():
     )
     parser.add_argument("--disable_structure_protection", action="store_true", default=False)
     parser.add_argument(
+        "--occlusion_physics_mode",
+        choices=["corrected", "legacy", "none"],
+        default="corrected",
+        help="Occlusion depth variance physics mode: 'corrected' (dimensionless multi-view depth variance), 'legacy' (exact pre-remediation within+between sum for ablation), or 'none'",
+    )
+    parser.add_argument(
         "--allocator_strategy",
         choices=["gain_per_byte", "demand_only", "random"],
         default="gain_per_byte",
+    )
+    parser.add_argument(
+        "--pruning_mode",
+        choices=["decoupled", "legacy_as_is"],
+        default="decoupled",
+        help="Pruning lifecycle mode: 'decoupled' (Stage 1 Hygiene + Stage 2 Admission) or 'legacy_as_is' (A0 ablation baseline)",
+    )
+    parser.add_argument(
+        "--gradient_mask_mode",
+        choices=["canonical", "contribution_aware"],
+        default="canonical",
+        help="Gradient densification accumulator mask mode: 'canonical' (Vanilla 3DGS visibility_filter/radii>0 for both numerator and denominator) or 'contribution_aware' (cur_vis_count>0 for both)",
     )
     parser.add_argument("--enable_zero_oom", action="store_true", default=True)
     parser.add_argument("--disable_zero_oom", action="store_false", dest="enable_zero_oom")
@@ -664,20 +1039,52 @@ if __name__ == "__main__":
     opt_args.gamma_occ = args.gamma_occ
     opt_args.transmittance_tau = args.transmittance_tau
     opt_args.occlusion_mode = args.occlusion_mode
+    opt_args.occlusion_physics_mode = args.occlusion_physics_mode
     opt_args.enable_structure_protection = not args.disable_structure_protection
     opt_args.allocator_strategy = args.allocator_strategy
     opt_args.enable_zero_oom = args.enable_zero_oom
+    opt_args.pruning_mode = args.pruning_mode
+    opt_args.gradient_mask_mode = args.gradient_mask_mode
     opt_args.require_native_stats = not args.allow_missing_native_stats
     opt_args.simulation_mode = args.simulation_mode
     opt_args.num_init_points = args.num_init_points
     opt_args.telemetry_jsonl = args.telemetry_jsonl
     opt_args.cost_calibration = args.cost_calibration
+    opt_args.inflow_mode = args.inflow_mode
+    opt_args.inflow_cap_min = args.inflow_cap_min
+    opt_args.inflow_cap_max = args.inflow_cap_max
+    opt_args.target_headroom_mb = args.target_headroom_mb
     run_id = uuid.uuid4().hex
     opt_args.run_id = run_id
+
+    git_commit = None
+    git_dirty = False
+    try:
+        git_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        git_status_out = subprocess.check_output(
+            ["git", "status", "--porcelain"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        git_dirty = bool(git_status_out)
+    except Exception:
+        pass
+
+    calibration_hash = None
+    if getattr(args, "cost_calibration", None) and os.path.exists(args.cost_calibration):
+        import hashlib
+        try:
+            with open(args.cost_calibration, "rb") as f:
+                calibration_hash = hashlib.sha256(f.read()).hexdigest()
+        except Exception:
+            pass
 
     run_manifest = {
         "schema_version": 1,
         "run_id": run_id,
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
+        "calibration_hash": calibration_hash,
         "evidence_type": "simulation" if args.simulation_mode else "measured",
         "method": args.experiment_method,
         "scene": args.experiment_scene or (
