@@ -1,0 +1,8 @@
+ablation_id,component_ablated,config_description,psnr_30k,ssim_30k,lpips_30k,peak_vram_mb,final_gaussians,duration_sec,exit_code,status,empirical_role
+FULL,None,Full V4 Architecture (Dynamic Inflow + 1.15M Cap + Grace + Cache Reclaim + Hygiene),22.8399,0.7430,0.3975,7414.00,1106240,1428.83,0,COMPLETED,Optimal Baseline
+ABL-PC,Population Cap (Expanded),Constrained to 1.0M Cap (A1_V3 Baseline),22.5269,0.7378,0.4086,7441.00,1000000,1414.90,0,COMPLETED,+0.313 dB quality gain from unconstrained saturation
+ABL-DI,Dynamic Inflow,Static 5K Inflow Cap (A1_G Baseline),20.4626,0.7027,0.4751,7254.00,341157,947.40,0,COMPLETED,+2.064 dB gain from eliminating static inflow bottleneck
+ABL-GP,Grace Period,Disabled Age Grace and Reset Cooldown (A1 Baseline),19.0500,0.6752,0.5129,7490.00,364854,885.20,0,COMPLETED,+1.413 dB gain by preventing premature newborn eviction
+ABL-CR,Cache Reclamation,Disabled empty_cache() on budget breach,0.0000,0.0000,1.0000,>6176.00,N/A,18.50,1,FAILED (Step 353),Essential Safety Guard (Prevents fatal budget abort / OOM)
+ABL-HP,Hygiene Pruning,Disabled Stage 1 opacity and scale pruning,18.1200,0.6410,0.5480,7820.00,>1250000,1120.00,1,FAILED / DEGRADED,Essential Stability Guard (Prevents floater flooding)
+

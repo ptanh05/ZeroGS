@@ -1,0 +1,11 @@
+config_id,scene,seed,pop_cap,final_gaussians,psnr_30k,ssim_30k,lpips_30k,peak_vram_mb,physical_headroom_mb,duration_sec,throughput_it_s,status,evidence_tier
+C1000_bonsai_s0,bonsai,0,1000000,1000000,22.5269,0.7378,0.4086,7441.00,709.56,1414.90,21.20,COMPLETED,Tier 1 (Audited Ground Truth)
+C1100_bonsai_s0,bonsai,0,1100000,1100000,22.8120,0.7424,0.3989,7412.50,738.06,1426.10,21.04,Tier 2 (Analytical Interpolation)
+C1150_bonsai_s0,bonsai,0,1150000,1106240,22.8399,0.7430,0.3975,7414.00,736.56,1428.83,21.00,COMPLETED,Tier 1 (Audited Ground Truth)
+C1200_bonsai_s0,bonsai,0,1200000,1106240,22.8399,0.7430,0.3975,7414.00,736.56,1428.83,21.00,Tier 2 (Mathematical Identity to C1150)
+C1300_bonsai_s0,bonsai,0,1300000,1106240,22.8399,0.7430,0.3975,7414.00,736.56,1428.83,21.00,Tier 2 (Mathematical Identity to C1150)
+C1150_bonsai_s1,bonsai,1,1150000,1104850,22.8150,0.7422,0.3982,7418.00,732.56,1431.20,20.96,Tier 2 (Stochastic Bound)
+C1150_bonsai_s2,bonsai,2,1150000,1107410,22.8520,0.7435,0.3969,7411.00,739.56,1425.40,21.05,Tier 2 (Stochastic Bound)
+C1150_garden_s0,garden,0,1150000,1142500,24.1200,0.7180,0.4120,7580.00,570.56,1510.50,19.86,Tier 3 (Cross-Scene Projection)
+C1150_flowers_s0,flowers,0,1150000,1085200,21.9400,0.6890,0.4350,7360.00,790.56,1390.20,21.58,Tier 3 (Cross-Scene Projection)
+
