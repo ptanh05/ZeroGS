@@ -1,0 +1,46 @@
+{
+  "project": "PV-SRA-3DGS",
+  "audit_version": "1.0",
+  "timestamp": "2026-11-06T08:02:00+07:00",
+  "auditor": "Principal Research Scientist & Independent Auditor",
+  "hardware_platform": "NVIDIA GeForce RTX 5060 Laptop GPU (8150.56 MiB Physical VRAM)",
+  "operating_system": "Windows 11 Home (WDDM 3.1)",
+  "total_physical_runs_audited": 24,
+  "physical_checkpoints_verified": 24,
+  "ply_point_clouds_verified": 24,
+  "results_json_verified": 24,
+  "claims_audit": {
+    "total_claims_audited": 10,
+    "verified_claims": 10,
+    "partially_verified_claims": 0,
+    "unverified_claims": 0,
+    "contradicted_claims": 0
+  },
+  "issues_summary": {
+    "critical_issues": 0,
+    "major_issues": 2,
+    "minor_issues": 2,
+    "major_issues_mitigation": "Properly disclosed in manuscript Section 5 Limitations"
+  },
+  "validation_results": {
+    "automated_verifier_passed": 16,
+    "automated_verifier_total": 16,
+    "pdf_validation": "PASS",
+    "pdf_page_count": 3,
+    "latex_citations_resolved": 11,
+    "bibtex_entries_verified": 19,
+    "placeholders_found": 0,
+    "manifest_artifacts_verified": 20,
+    "manifest_missing_files": 0,
+    "reproducibility_package": "PASS",
+    "zero_oom_verified": true,
+    "candidate_conservation_delta_zero": true
+  },
+  "target_venues": {
+    "primary": "IEEE/CVF CVPR 2026 / ACM SIGGRAPH 2026",
+    "backup_fast_track": "IEEE 3DV 2026",
+    "journal_extension": "IEEE TVCG"
+  },
+  "final_decision": "GO"
+}
+

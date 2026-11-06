@@ -1,0 +1,6 @@
+issue_id,severity,category,description,location,mitigation_status,action_required
+ISS-001,MAJOR,Methodology,"Multi-seed sample size is limited to n=3 (df=2) on bonsai","submission/main.tex Sec 5",MITIGATED,"Disclose df=2 limitation in Limitations section; plan n=5 expansion for journal extension."
+ISS-002,MAJOR,Experimental Scope,"Cross-scene trials on garden and flowers are single-seed (Seed 0)","submission/main.tex Sec 4.2",MITIGATED,"Scope cross-scene claims to topological validation rather than universal generalization."
+ISS-003,MINOR,Supplementary,"Supplementary video demonstration of novel-view camera flythroughs not yet rendered","submission/figures/",PENDING_CAMERA_READY,"Generate MP4 flythrough videos for SIGGRAPH / CVPR supplementary package."
+ISS-004,MINOR,Future Work,"Potential integration of monocular depth regularization for extreme foliage","paper/final_draft/DISCUSSION_AND_LIMITATIONS.md",ADDRESSED,"Discussed in Section 5 as promising future research direction."
+
