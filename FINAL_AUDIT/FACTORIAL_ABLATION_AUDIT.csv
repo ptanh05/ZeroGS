@@ -1,0 +1,5 @@
+cell,code,inflow,pruning,psnr,ssim,lpips,num_views,gaussians,peak_vram,duration,oom
+"Cell (0,0)",ABL-DI,Static 5k,Decoupled Hygiene,20.17389287175359,0.704424141226588,0.4691421300978274,37,358651,7276.0,934.54,False
+"Cell (1,0)",A1_V4_P1,"Dynamic [5k,15k]",Decoupled Hygiene,22.839890763566302,0.742984522033382,0.3974675963053832,37,1106240,7414.0,1428.83,False
+"Cell (0,1)",ABL-DI-HP,Static 5k,Preservation Lifecycle,32.02267177684887,0.9455813153370006,0.16178235854651477,37,653344,7465.0,2224.36,False
+"Cell (1,1)",ABL-HP,"Dynamic [5k,15k]",Preservation Lifecycle,31.27761088190852,0.9375578261710502,0.1737463154100083,37,705392,7444.0,1608.14,False
