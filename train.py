@@ -649,7 +649,7 @@ def training(
                             telemetry_writer.write(
                                 "mutation_cycle",
                                 iteration=iteration,
-                                decision=decision.to_dict() if hasattr(decision, "to_dict") else decision,
+                                decision=allocation_decision.to_dict() if hasattr(allocation_decision, "to_dict") else allocation_decision,
                                 executed_pre_prune=executed_pre_prune,
                                 n_clone_executed=int(final_clone_mask.sum().item()),
                                 n_split_executed=int(final_split_mask.sum().item()),
@@ -857,7 +857,7 @@ def training(
                                 n_newborn=n_newborn,
                                 n_protected_by_age=n_protected_by_age,
                                 n_protected_by_cooldown=n_protected_by_cooldown,
-                                decision=decision.to_dict() if hasattr(decision, "to_dict") else decision,
+                                decision=allocation_decision.to_dict() if hasattr(allocation_decision, "to_dict") else allocation_decision,
                                 executed_pre_prune=executed_pre_prune,
                                 executed_hygiene_prune=executed_hygiene_prune,
                                 n_clone_executed=int(final_clone_mask.sum().item()),

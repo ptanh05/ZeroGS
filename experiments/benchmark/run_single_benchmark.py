@@ -258,6 +258,22 @@ EXPERIMENT_CONFIGS: Dict[str, List[str]] = {
         "--gaussians_per_iter_cap", "5000",
         "--max_gaussians_cap", "1150000",
     ],
+    "ABL-DI-HP": [
+        "--hard_vram_limit_mb", "6144.0",
+        "--safety_headroom_mb", "512.0",
+        "--non_pytorch_allowance_mb", "256.0",
+        "--pruning_mode", "legacy_as_is",
+        "--occlusion_physics_mode", "legacy",
+        "--gradient_mask_mode", "canonical",
+        "--allocator_strategy", "gain_per_byte",
+        "--cost_calibration", "experiments/results/cost_calibration.json",
+        "--tau_age", "500",
+        "--tau_reset", "400",
+        "--kappa_split", "0.40",
+        "--inflow_mode", "static",
+        "--gaussians_per_iter_cap", "5000",
+        "--max_gaussians_cap", "1150000",
+    ],
 }
 
 # Aliases with dashes and alternate naming
@@ -271,6 +287,8 @@ EXPERIMENT_CONFIGS["C-1200"] = EXPERIMENT_CONFIGS["C1200"]
 EXPERIMENT_CONFIGS["C-1300"] = EXPERIMENT_CONFIGS["C1300"]
 EXPERIMENT_CONFIGS["ABL_HP"] = EXPERIMENT_CONFIGS["ABL-HP"]
 EXPERIMENT_CONFIGS["ABL_DI"] = EXPERIMENT_CONFIGS["ABL-DI"]
+EXPERIMENT_CONFIGS["ABL_DI_HP"] = EXPERIMENT_CONFIGS["ABL-DI-HP"]
+EXPERIMENT_CONFIGS["ABL-DI-HP"] = EXPERIMENT_CONFIGS["ABL-DI-HP"]
 
 
 class DeviceMemoryMonitor:
