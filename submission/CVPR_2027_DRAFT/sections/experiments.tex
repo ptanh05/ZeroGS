@@ -1,0 +1,30 @@
+\section{Experimental Setup}
+\paragraph{Hardware and software.}
+All reported training runs used one NVIDIA GeForce RTX 5060 Laptop GPU with 8,150.56 MiB physical VRAM under Windows 11/WDDM, driver 573.24, Python 3.12.10, PyTorch 2.11.0+cu128, and CUDA runtime 12.8. The internal controller used $B_{\rm hard}=6{,}144$ MiB, $B_{\rm safe}=512$ MiB, and $B_{\rm np}=256$ MiB. A separate thread queried \texttt{nvidia-smi} every 1.5 s; we call the maximum sample ``peak physical VRAM.'' Because spikes between samples can be missed, it is a sampled peak rather than continuous instrumentation.
+
+\paragraph{Data and protocol.}
+We use Bonsai, Garden, and Flowers from Mip-NeRF 360~\cite{barron2022mipnerf360}, loaded from \texttt{images\_4}. The standard LLFF rule holds out cameras with sorted index $i\bmod 8=0$, producing 255/37, 161/24, and 151/22 train/test views, respectively. Every run trains for 30,000 iterations; density control operates every 100 steps from iterations 500 to 15,000. Evaluation averages PSNR, SSIM~\cite{wang2004ssim}, and VGG-LPIPS~\cite{zhang2018lpips} over all held-out images. Final populations come from PLY vertex headers. Seeds 0, 1, and 2 are used for the paired Bonsai study; Garden and Flowers use seed 0 only.
+
+\begin{table}[t]
+\centering\scriptsize
+\caption{2x2 factorial configurations. ``Preserve'' is the admission-coupled lifecycle described in Sec.~3.3.}
+\label{tab:configs}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+Configuration & Inflow & Lifecycle\\
+\midrule
+Baseline V4 (A1\_V4\_P1) & Dynamic 5K--15K & Eager hygiene\\
+ABL-DI & Static 5K & Eager hygiene\\
+ABL-DI-HP & Static 5K & Preserve\\
+ABL-HP (ours) & Dynamic 5K--15K & Preserve\\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\paragraph{Comparisons and statistics.}
+The 2x2 factorial grid holds scene, seed, iteration count, learning schedule, population ceiling (1.15M), allocator, and memory settings fixed. It isolates inflow and lifecycle on Bonsai seed 0. We additionally compare to a vanilla 3DGS reference on Bonsai only; no vanilla reference was run on Garden or Flowers. For paired seed differences we report sample mean, sample standard deviation, a two-sided paired Student $t$ test, 95\% $t$ confidence interval, and Cohen's $d_z$. With $n=3$, the normality assumption cannot be meaningfully assessed; the exact two-sided sign test for three positive differences is only $p=0.25$.
+
+\paragraph{Reproducibility.}
+Python, NumPy, and PyTorch RNGs receive the recorded seed. Raw evaluation JSON, final PLY, checkpoints, command-line flags, telemetry, environment, exit status, and peak device sample are retained for each run. The validation script reads these artifacts directly and checks all 24 entries against the canonical registry; no new GPU experiment is used in this paper-writing pass.

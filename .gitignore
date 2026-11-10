@@ -47,6 +47,17 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
+# LaTeX compilation artifacts
+*.aux
+*.bbl
+*.blg
+*.brf
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
 # Large training checkpoints and heavy datasets
 output/
 runs/

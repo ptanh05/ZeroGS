@@ -1,0 +1,27 @@
+claim_id,description,verified_value,evidence,status
+Q01,24 physical 30k runs,24,FINAL_AUDIT/PHYSICAL_EVIDENCE_AUDIT.csv,VERIFIED
+Q02,0 observed OOMs,0,output/*/run_status.json,VERIFIED
+Q03,Maximum sampled physical VRAM (MiB),7656.0,output/*/benchmark_verification.json,VERIFIED
+Q04,Minimum physical headroom (MiB),494.5600000000004,hardware capacity - Q03,VERIFIED
+Q05,Baseline Bonsai mean PSNR,20.74549487689594,three raw results.json files,VERIFIED
+Q06,Proposed Bonsai mean PSNR,31.830500164547477,three raw results.json files,VERIFIED
+Q07,Paired PSNR gain,11.08500528765154,"paired seeds 0,1,2",VERIFIED
+Q08,Paired gain sample std,2.3382966871976425,"paired seeds 0,1,2",VERIFIED
+Q09,Paired t statistic,8.21101636310845,scipy.stats.ttest_rel,VERIFIED
+Q10,Paired t p value,0.014510179368669766,scipy.stats.ttest_rel,VERIFIED
+Q11,Paired Cohen dz,4.740632507561086,mean(delta)/std(delta),VERIFIED
+Q12,95% CI lower,5.276354305723011,"Student t, df=2",VERIFIED
+Q13,95% CI upper,16.89365626958007,"Student t, df=2",VERIFIED
+Q14,Preservation main effect,10.143249511718743,four factorial raw results,VERIFIED
+Q15,Inflow main effect,0.9604684984361782,four factorial raw results,VERIFIED
+Q16,Interaction,-3.4110587867530597,difference in differences,VERIFIED
+Q17,Garden PSNR gain,6.254330714543663,two raw results.json files,VERIFIED
+Q18,Flowers PSNR gain,2.9422425356778206,two raw results.json files,VERIFIED
+Q19,Static preservation PSNR,32.02267177684887,raw results.json,VERIFIED
+Q20,Dynamic preservation PSNR,31.27761088190852,raw results.json,VERIFIED
+Q21,Persistent training bytes/Gaussian,944,zerogs/cost_model.py,VERIFIED
+Q22,Clone transient unit bytes,1137.12717322449,cost_calibration.json,VERIFIED
+Q23,Split transient unit bytes,2429.700388571429,cost_calibration.json,VERIFIED
+Q24,Held-out calibration combined MAPE (%),3.5742454912565003,cost_calibration.json,VERIFIED
+Q25,Bonsai proposed vs vanilla PSNR gain,2.2447711841480107,raw proposed seeds and V_ref,VERIFIED
+Q26,Bonsai Gaussian reduction vs vanilla (%),40.279965570926315,raw PLY counts,VERIFIED

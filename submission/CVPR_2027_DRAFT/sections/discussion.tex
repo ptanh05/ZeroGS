@@ -1,0 +1,12 @@
+\section{Discussion}
+\paragraph{Why preservation helps.}
+The factorial evidence supports a lifecycle explanation, but not a microscopic causal proof. Eager hygiene evaluates opacity every density-control cycle. A recently admitted primitive can therefore be removed while its opacity and view support are still weak, even when memory is plentiful. Pressure-triggered preservation converts this unconditional decision into a resource-contingent one. The retained population has more opportunities to redistribute spatial support, which is consistent with the large quality gains and lower seed-to-seed variance. Direct per-Gaussian lineage experiments would be required to prove that maturation, rather than another branch-level behavior, is the sole mechanism.
+
+\paragraph{Inflow and lifecycle interact.}
+Dynamic inflow partly compensates for eager pruning by injecting more candidates, explaining its $+2.67$ dB simple effect in that branch. Once preservation is active, static 5K is slightly better than dynamic inflow at seed 0. More admission is therefore not uniformly beneficial: candidate quality, optimization time, and retention jointly determine the final allocation. This interaction is the reason we do not present dynamic inflow as an independently validated quality improvement.
+
+\paragraph{Fewer Gaussians can be better.}
+Primitive count is a capacity measure, not a quality metric. The preservation mean exceeds the Bonsai vanilla reference with fewer Gaussians, plausibly because admission and retention place capacity where demand is higher. Yet whole-device VRAM is also not determined by count alone. Transient tensor concatenations, optimizer rebuilding, view-dependent rasterization lists, caching, and WDDM allocations can dominate a sampled physical peak.
+
+\paragraph{Deployment implications.}
+The controller is useful when a fixed training recipe must operate close to a consumer-GPU limit: it turns free headroom into a mutation budget and exposes explicit safety margins. It does not virtualize memory or intercept every rasterizer allocation. A deployment should therefore calibrate clone/split costs on its own software stack, reserve external headroom, and treat asynchronous device telemetry as diagnostic rather than preventive.

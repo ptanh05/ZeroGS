@@ -1,0 +1,27 @@
+\section{Related Work}
+\paragraph{Radiance fields and explicit splatting.}
+NeRF~\cite{mildenhall2020nerf}, mip-NeRF~\cite{barron2021mipnerf}, mip-NeRF 360~\cite{barron2022mipnerf360}, TensoRF~\cite{chen2022tensorf}, Plenoxels~\cite{fridovichkeil2022plenoxels}, and Instant-NGP~\cite{muller2022instant} progressively improve quality and training or rendering efficiency. 3DGS~\cite{kerbl2023gaussians} instead optimizes explicit anisotropic Gaussians and adapts their population through cloning, splitting, opacity removal, and scale-based pruning. Mip-Splatting addresses aliasing across sampling rates~\cite{yu2024mipsplatting}; Pixel-GS and Mini-Splatting revise density control and primitive placement~\cite{cheng2024pixelgs,fang2024minisplatting}. These methods motivate better population management but do not directly regulate transient mutation batches against a live peak-VRAM envelope.
+
+\paragraph{Compact and efficient Gaussian representations.}
+LightGaussian, Compact 3D Gaussian Representation, EAGLES, compressed 3DGS, and RDO-Gaussian reduce storage through pruning, masks, quantization, or adaptive attributes~\cite{fan2024lightgaussian,lee2024compact,girish2024eagles,niedermayr2024compressed,wang2024rdo}. Scaffold-GS structures Gaussians with anchors~\cite{lu2024scaffold}; Taming 3DGS targets high-resolution scenes~\cite{mallick2024taming}. More recent pruning work uses uncertainty, probabilistic masks, or alternating optimization~\cite{hanson2025pup,liu2025maskgaussian,zhang2025gaussianspa}; Speedy-Splat and FastGS target sparse computation and training speed~\cite{hanson2025speedysplat,ren2026fastgs}; LOD-GS introduces scalable levels of detail~\cite{shen2025lodgs}. Their primary objective is usually final representation size, rendering rate, or training speed. Our focus is complementary: safe and productive \emph{training-time inflow} under a measured memory budget.
+
+\begin{table}[t]
+\centering\scriptsize
+\caption{Positioning relative to representative efficiency work. ``Peak feedback'' denotes live allocator-state control during densification.}
+\label{tab:related}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccc}
+\toprule
+Method family & Compact output & Peak feedback & Lifecycle\rule{0pt}{1.7ex} \\
+\midrule
+Light/Compact/RDO-GS & \checkmark & -- & prune/compress \\
+PUP/Mask/GaussianSpa & \checkmark & -- & learned/optimized \\
+Speedy-Splat/FastGS & partial & -- & efficiency-driven \\
+\method & incidental & \checkmark & pressure-triggered \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\paragraph{Memory-aware allocation.}
+Our allocator uses the classical gain-per-cost intuition of greedy knapsack selection~\cite{martello1990knapsack} but applies it to heterogeneous 3DGS mutation costs. Because PyTorch uses a caching allocator~\cite{paszke2019pytorch}, reserved memory, live allocation, fixed operation overhead, and external device use must not be conflated. We therefore report both an internal conservative footprint and asynchronously sampled total device VRAM.

@@ -1,0 +1,29 @@
+{
+  "physical_runs": 24,
+  "oom_events": 0,
+  "peak_vram_min": 6906.0,
+  "peak_vram_max": 7656.0,
+  "hardware_vram": 8150.56,
+  "minimum_headroom": 494.5600000000004,
+  "base_psnr_mean": 20.74549487689594,
+  "base_psnr_std": 1.8690440440542107,
+  "proposed_psnr_mean": 31.830500164547477,
+  "proposed_psnr_std": 0.4788984519244849,
+  "delta_psnr_mean": 11.08500528765154,
+  "delta_psnr_std": 2.3382966871976425,
+  "t": 8.21101636310845,
+  "p": 0.014510179368669766,
+  "cohen_dz": 4.740632507561086,
+  "ci95": [
+    5.276354305723011,
+    16.89365626958007
+  ],
+  "factorial_preservation_main_effect": 10.143249511718743,
+  "factorial_inflow_main_effect": 0.9604684984361782,
+  "factorial_interaction": -3.4110587867530597,
+  "calibration_clone_multiplier": 1.204583869941197,
+  "calibration_split_multiplier": 2.573835157384988,
+  "calibration_clone_fixed_overhead_bytes": 60231489,
+  "calibration_split_fixed_overhead_bytes": 124401559,
+  "calibration_combined_mape_pct": 3.5742454912565003
+}
