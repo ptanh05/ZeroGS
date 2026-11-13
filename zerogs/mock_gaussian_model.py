@@ -18,9 +18,10 @@ class MockGaussianModel:
     Simulates the exact tensor layout and mutation behaviors of official 3DGS GaussianModel.
     """
 
-    def __init__(self, sh_degree: int = 3, num_points: int = 10000, device: str = "cuda"):
+    def __init__(self, sh_degree: int = 3, num_points: int = 10000, device: str = "cuda", optimizer_type: str = "default"):
         self.sh_degree = sh_degree
         self.max_sh_degree = sh_degree
+        self.optimizer_type = optimizer_type
         self.device = device if torch.cuda.is_available() and device == "cuda" else "cpu"
 
         # Parameter dimensions
@@ -72,15 +73,31 @@ class MockGaussianModel:
             {"params": [self._features_dc], "name": "features_dc"},
             {"params": [self._features_rest], "name": "features_rest"},
         ]
-        self.optimizer = torch.optim.Adam(params, lr=1e-3, eps=1e-15)
+        opt_type = str(self.optimizer_type).lower()
+        if opt_type in ["half_adam", "fp16_adam", "fp16"]:
+            from zerogs.optimizers import HalfPrecisionAdam
+            self.optimizer = HalfPrecisionAdam(params, lr=1e-3, eps=1e-15)
+        elif opt_type in ["int8_adam", "adam8bit", "int8"]:
+            from zerogs.optimizers import Int8GaussianAdam
+            self.optimizer = Int8GaussianAdam(params, lr=1e-3, eps=1e-15)
+        else:
+            self.optimizer = torch.optim.Adam(params, lr=1e-3, eps=1e-15)
 
         # Populate optimizer states for all parameters so memory footprint matches real training
         for group in self.optimizer.param_groups:
             for p in group["params"]:
                 state = self.optimizer.state[p]
                 state["step"] = torch.tensor(1.0, device=self.device)
-                state["exp_avg"] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                state["exp_avg_sq"] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                if opt_type in ["int8_adam", "adam8bit", "int8"]:
+                    state["exp_avg_int8"] = torch.zeros_like(p, dtype=torch.int8)
+                    state["scale_m"] = 1.0 / 127.0
+                    state["exp_avg_sq_uint8"] = torch.zeros_like(p, dtype=torch.uint8)
+                elif opt_type in ["half_adam", "fp16_adam", "fp16"]:
+                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float16)
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float16)
+                else:
+                    state["exp_avg"] = torch.zeros_like(p, memory_format=torch.preserve_format)
+                    state["exp_avg_sq"] = torch.zeros_like(p, memory_format=torch.preserve_format)
 
     def replace_tensor_to_optimizer(
         self, tensor: torch.Tensor, name: str

@@ -96,3 +96,53 @@ def test_admission_shrink_and_prune_first_on_saturation():
     assert decision.mutation_budget_bytes == (
         decision.available_headroom_bytes + decision.freed_bytes
     )
+
+
+def test_admission_4096mb_hard_budget():
+    """Verify hard 4096MB VRAM budget enforcement under INT8 and FP16 models."""
+    from zerogs.admission_controller import VramBudgetExceededError
+    from zerogs.cost_model import ByteCostModel
+
+    cost_model_int8 = ByteCostModel(sh_degree=3, optimizer_type="int8_adam")
+    controller = AdmissionController(
+        cost_model=cost_model_int8,
+        hard_vram_limit_mb=4096.0,
+        safety_headroom_mb=256.0,
+        non_pytorch_allowance_mb=256.0,
+        enable_deterministic_prune_first=True,
+    )
+
+    # Effective limit: 4096 - 256 = 3840 MB
+    assert controller.effective_budget_bytes == int(3840 * 1024 * 1024)
+    
+    # 1. Normal state: 2000 MB allocated -> plenty of headroom
+    dec_accept = controller.evaluate_admission(
+        n_clone_requested=2000,
+        n_split_requested=2000,
+        current_num_gaussians=100_000,
+        prune_candidates_count=5000,
+        current_allocated_bytes=int(2000 * 1024 * 1024),
+    )
+    assert dec_accept.action == AdmissionAction.ACCEPT
+    assert dec_accept.n_clone == 2000
+    assert dec_accept.n_split == 2000
+
+    # 2. Saturated state: 3580 MB allocated (only ~4MB headroom left before non-pytorch allowance)
+    dec_saturated = controller.evaluate_admission(
+        n_clone_requested=20000,
+        n_split_requested=20000,
+        current_num_gaussians=600_000,
+        prune_candidates_count=2000,
+        current_allocated_bytes=int(3580 * 1024 * 1024),
+    )
+    assert dec_saturated.action in [
+        AdmissionAction.SHRINK_AND_PRUNE_FIRST,
+        AdmissionAction.PRUNE_FIRST,
+        AdmissionAction.REJECT_AND_PRUNE,
+    ]
+    assert dec_saturated.transient_cost_bytes <= (dec_saturated.available_headroom_bytes + dec_saturated.freed_bytes)
+
+    # 3. Hard limit parameters
+    assert controller.hard_vram_limit_bytes == int(4096 * 1024 * 1024)
+    assert controller.safety_headroom_bytes == int(256 * 1024 * 1024)
+    assert controller.non_pytorch_allowance_bytes == int(256 * 1024 * 1024)

@@ -266,6 +266,8 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': getattr(training_args, "rotation_lr", 0.001), "name": "rotation"}
         ]
 
+        if hasattr(training_args, "optimizer_type") and training_args.optimizer_type:
+            self.optimizer_type = str(training_args.optimizer_type).lower()
         opt_type = str(self.optimizer_type).lower()
         if opt_type in ["half_adam", "fp16_adam", "fp16"]:
             from zerogs.optimizers import HalfPrecisionAdam

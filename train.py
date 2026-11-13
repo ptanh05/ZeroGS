@@ -108,11 +108,12 @@ def training(
 
     # Initialize Gaussian Model & Scene
     if not is_simulation:
-        gaussians = GaussianModel(dataset.sh_degree)
+        gaussians = GaussianModel(dataset.sh_degree, optimizer_type=getattr(opt, "optimizer_type", "default"))
         scene = Scene(dataset, gaussians)
         with open(os.path.join(scene.model_path, "cfg_args"), "w", encoding="utf-8") as cfg_log_f:
             cfg_log_f.write(str(Namespace(**vars(dataset))))
         gaussians.training_setup(opt)
+        print(f"[ZeroGS] Initialized optimizer: {type(gaussians.optimizer).__name__} (optimizer_type='{gaussians.optimizer_type}')")
         if checkpoint:
             (model_params, first_iter) = torch.load(checkpoint)
             gaussians.restore(model_params, opt)
@@ -122,7 +123,13 @@ def training(
     else:
         print("[ZeroGS] Explicit simulation mode enabled. Results are for smoke testing only.")
         num_init_pts = getattr(opt, "num_init_points", 5000)
-        gaussians = MockGaussianModel(sh_degree=dataset.sh_degree, num_points=num_init_pts, device=device)
+        gaussians = MockGaussianModel(
+            sh_degree=dataset.sh_degree,
+            num_points=num_init_pts,
+            device=device,
+            optimizer_type=getattr(opt, "optimizer_type", "default"),
+        )
+        print(f"[ZeroGS] Initialized simulation optimizer: {type(gaussians.optimizer).__name__} (optimizer_type='{gaussians.optimizer_type}')")
         scene = None
         background = torch.zeros(3, device=device)
         scene_extent = 3.0

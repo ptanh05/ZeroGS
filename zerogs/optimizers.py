@@ -65,7 +65,7 @@ class HalfPrecisionAdam(Optimizer):
                     raise RuntimeError("HalfPrecisionAdam does not support sparse gradients")
 
                 state = self.state[p]
-                if len(state) == 0:
+                if len(state) == 0 or "exp_avg" not in state or state["exp_avg"].dtype != torch.float16:
                     state["step"] = 0
                     state["exp_avg"] = torch.zeros_like(p, dtype=torch.float16)
                     state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float16)
@@ -80,20 +80,23 @@ class HalfPrecisionAdam(Optimizer):
                     grad = grad.add(p, alpha=weight_decay)
 
                 # Cast moments to float32 for stable update calculation
+                # exp_avg_sq stores sqrt(v) in float16 to double the dynamic range and prevent underflow
                 m = exp_avg.to(torch.float32).mul_(beta1).add_(grad, alpha=1.0 - beta1)
-                v = exp_avg_sq.to(torch.float32).mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
+                v = exp_avg_sq.to(torch.float32).square_().mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
 
                 bias_correction1 = 1.0 - beta1 ** step
                 bias_correction2 = 1.0 - beta2 ** step
 
                 step_size = lr / bias_correction1
-                denom = (v.sqrt() / (bias_correction2 ** 0.5)).add_(eps)
+                v_sqrt = v.sqrt()
+                denom = (v_sqrt / (bias_correction2 ** 0.5)).add_(eps)
 
                 p.addcdiv_(m, denom, value=-step_size)
 
                 # Store updated moments back in float16
                 exp_avg.copy_(m.to(torch.float16))
-                exp_avg_sq.copy_(v.to(torch.float16))
+                v_pos = v > 0
+                exp_avg_sq.copy_(torch.where(v_pos, v_sqrt.clamp(min=6e-8), torch.zeros_like(v_sqrt)).to(torch.float16))
 
         return loss
 
@@ -103,7 +106,7 @@ class Int8GaussianAdam(Optimizer):
     Int8 Dynamically Quantized Adam optimizer for 3D Gaussian Splatting.
 
     Quantizes first moment exp_avg to signed int8 and second moment exp_avg_sq to unsigned uint8
-    with per-tensor dynamic scale factors.
+    with per-tensor dynamic scale factors and wide-dynamic-range logarithmic variance quantization.
     Reduces persistent optimizer memory from 472 Bytes/Gaussian down to 118 Bytes/Gaussian
     (saving 354 Bytes per Gaussian, a 75% reduction in optimizer VRAM).
 
@@ -152,12 +155,12 @@ class Int8GaussianAdam(Optimizer):
                     raise RuntimeError("Int8GaussianAdam does not support sparse gradients")
 
                 state = self.state[p]
-                if len(state) == 0:
+                if len(state) == 0 or "exp_avg_int8" not in state:
                     state["step"] = 0
                     state["exp_avg_int8"] = torch.zeros_like(p, dtype=torch.int8)
                     state["scale_m"] = 1.0 / 127.0
                     state["exp_avg_sq_uint8"] = torch.zeros_like(p, dtype=torch.uint8)
-                    state["scale_v"] = 1.0 / 255.0
+                    state["scale_v"] = 40.0 / 254.0
 
                 state["step"] += 1
                 step = state["step"]
@@ -168,9 +171,9 @@ class Int8GaussianAdam(Optimizer):
                 # Dequantize moments to float32 for update
                 m = state["exp_avg_int8"].to(torch.float32).mul_(state["scale_m"])
 
-                # Log-dequantize variance v (spans 7 orders of magnitude from 1e-7 to 1e2)
+                # Log-dequantize variance v across 17 orders of magnitude [-36.0, 4.0] (2.3e-16 to 54.6)
                 q_v = state["exp_avg_sq_uint8"].to(torch.float32)
-                v = torch.where(q_v > 0, torch.exp((q_v / 255.0) * 20.0 - 16.0), torch.zeros_like(q_v))
+                v = torch.where(q_v > 0, torch.exp(-36.0 + (q_v - 1.0) / 254.0 * 40.0), torch.zeros_like(q_v))
 
                 m.mul_(beta1).add_(grad, alpha=1.0 - beta1)
                 v.mul_(beta2).addcmul_(grad, grad, value=1.0 - beta2)
@@ -191,9 +194,10 @@ class Int8GaussianAdam(Optimizer):
                 state["scale_m"] = scale_m
 
                 # 2) v: logarithmic dynamic quantization into uint8 [1, 255]
-                v_clamped = v.clamp(min=1e-7)
-                log_v = torch.log(v_clamped)
-                q_val = ((log_v - (-16.0)) / 20.0 * 254.0 + 1.0).round_().clamp_(1, 255).to(torch.uint8)
-                state["exp_avg_sq_uint8"].copy_(torch.where(v > 1e-9, q_val, torch.zeros_like(q_val)))
+                # Code 0 is reserved for uninitialized/zero variance; non-zero values clamp to [1, 255]
+                v_pos = v > 0
+                log_v = torch.log(v.clamp(min=2.3e-16))
+                q_val = ((log_v - (-36.0)) / 40.0 * 254.0 + 1.0).round_().clamp_(1, 255).to(torch.uint8)
+                state["exp_avg_sq_uint8"].copy_(torch.where(v_pos, q_val, torch.zeros_like(q_val)))
 
         return loss

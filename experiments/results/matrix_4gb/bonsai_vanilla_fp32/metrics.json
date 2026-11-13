@@ -1,0 +1,8 @@
+{
+  "experiments\\results\\matrix_4gb\\bonsai_vanilla_fp32\\test\\ours_3000": {
+    "PSNR": 14.469458683117017,
+    "SSIM": 0.43825223075376973,
+    "LPIPS": 0.7147596752321398,
+    "num_views": 37
+  }
+}

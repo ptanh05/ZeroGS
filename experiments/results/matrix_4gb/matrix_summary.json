@@ -1,0 +1,158 @@
+{
+  "Vanilla_FP32": {
+    "name": "Vanilla_FP32",
+    "description": "Vanilla 3DGS baseline with default FP32 Adam (unconstrained)",
+    "status": "completed",
+    "oom": false,
+    "training_time_sec": 259.7,
+    "training_speed_it_per_sec": 11.55,
+    "metrics": {
+      "PSNR": 14.469458683117017,
+      "SSIM": 0.43825223075376973,
+      "LPIPS": 0.7147596752321398,
+      "num_views": 37
+    },
+    "telemetry": {
+      "peak_allocated_mb": 2328.89,
+      "peak_reserved_mb": 4544.0,
+      "final_gaussians": 332802,
+      "admission_evaluations": 0,
+      "prune_first_triggers": 0,
+      "shrink_triggers": 0,
+      "pruned_via_admission": 0
+    },
+    "files": {
+      "ply_exists": true,
+      "ply_size_mb": 78.71,
+      "ply_valid": true,
+      "ply_points": 332802,
+      "splat_exists": true,
+      "splat_size_mb": 10.16,
+      "splat_valid": true,
+      "splat_points": 332802,
+      "npz_exists": true,
+      "npz_size_mb": 17.29,
+      "npz_valid": true,
+      "npz_points": 332802,
+      "splat_compression_ratio": 7.75,
+      "npz_compression_ratio": 4.55
+    }
+  },
+  "ZeroGS_FP32": {
+    "name": "ZeroGS_FP32",
+    "description": "ZeroGS with default FP32 Adam under 4096MB hard budget",
+    "status": "completed",
+    "oom": false,
+    "training_time_sec": 273.5,
+    "training_speed_it_per_sec": 10.97,
+    "metrics": {
+      "PSNR": 14.36321225037446,
+      "SSIM": 0.4357617408842654,
+      "LPIPS": 0.716292996664305,
+      "num_views": 37
+    },
+    "telemetry": {
+      "peak_allocated_mb": 2265.61,
+      "peak_reserved_mb": 3078.0,
+      "final_gaussians": 286886,
+      "admission_evaluations": 25,
+      "prune_first_triggers": 0,
+      "shrink_triggers": 0,
+      "pruned_via_admission": 0
+    },
+    "files": {
+      "ply_exists": true,
+      "ply_size_mb": 67.85,
+      "ply_valid": true,
+      "ply_points": 286886,
+      "splat_exists": true,
+      "splat_size_mb": 8.76,
+      "splat_valid": true,
+      "splat_points": 286886,
+      "npz_exists": true,
+      "npz_size_mb": 15.06,
+      "npz_valid": true,
+      "npz_points": 286886,
+      "splat_compression_ratio": 7.75,
+      "npz_compression_ratio": 4.51
+    }
+  },
+  "ZeroGS_FP16": {
+    "name": "ZeroGS_FP16",
+    "description": "ZeroGS with HalfPrecisionAdam under 4096MB hard budget",
+    "status": "completed",
+    "oom": false,
+    "training_time_sec": 235.5,
+    "training_speed_it_per_sec": 12.74,
+    "metrics": {
+      "PSNR": 13.475425539789972,
+      "SSIM": 0.40093499341526545,
+      "LPIPS": 0.7129455933699737,
+      "num_views": 37
+    },
+    "telemetry": {
+      "peak_allocated_mb": 2147.72,
+      "peak_reserved_mb": 3172.0,
+      "final_gaussians": 251057,
+      "admission_evaluations": 25,
+      "prune_first_triggers": 0,
+      "shrink_triggers": 0,
+      "pruned_via_admission": 0
+    },
+    "files": {
+      "ply_exists": true,
+      "ply_size_mb": 59.38,
+      "ply_valid": true,
+      "ply_points": 251057,
+      "splat_exists": true,
+      "splat_size_mb": 7.66,
+      "splat_valid": true,
+      "splat_points": 251057,
+      "npz_exists": true,
+      "npz_size_mb": 11.95,
+      "npz_valid": true,
+      "npz_points": 251057,
+      "splat_compression_ratio": 7.75,
+      "npz_compression_ratio": 4.97
+    }
+  },
+  "ZeroGS_INT8": {
+    "name": "ZeroGS_INT8",
+    "description": "ZeroGS with Int8GaussianAdam under 4096MB hard budget",
+    "status": "completed",
+    "oom": false,
+    "training_time_sec": 320.9,
+    "training_speed_it_per_sec": 9.35,
+    "metrics": {
+      "PSNR": 14.69728168281349,
+      "SSIM": 0.43800957702301646,
+      "LPIPS": 0.7290383045737808,
+      "num_views": 37
+    },
+    "telemetry": {
+      "peak_allocated_mb": 2150.51,
+      "peak_reserved_mb": 3098.0,
+      "final_gaussians": 270747,
+      "admission_evaluations": 25,
+      "prune_first_triggers": 0,
+      "shrink_triggers": 0,
+      "pruned_via_admission": 0
+    },
+    "files": {
+      "ply_exists": true,
+      "ply_size_mb": 64.04,
+      "ply_valid": true,
+      "ply_points": 270747,
+      "splat_exists": true,
+      "splat_size_mb": 8.26,
+      "splat_valid": true,
+      "splat_points": 270747,
+      "npz_exists": true,
+      "npz_size_mb": 14.51,
+      "npz_valid": true,
+      "npz_points": 270747,
+      "splat_compression_ratio": 7.75,
+      "npz_compression_ratio": 4.41
+    }
+  }
+}
