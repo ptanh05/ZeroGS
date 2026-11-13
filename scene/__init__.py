@@ -97,6 +97,16 @@ class Scene:
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+        if hasattr(self.gaussians, "save_splat"):
+            try:
+                self.gaussians.save_splat(os.path.join(point_cloud_path, "point_cloud.splat"))
+            except Exception as e:
+                print(f"[ZeroGS] Warning: Failed to save .splat: {e}")
+        if hasattr(self.gaussians, "save_compressed"):
+            try:
+                self.gaussians.save_compressed(os.path.join(point_cloud_path, "point_cloud_compressed.npz"))
+            except Exception as e:
+                print(f"[ZeroGS] Warning: Failed to save compressed .npz: {e}")
         exposure_dict = {
             image_name: self.gaussians.get_exposure_from_name(image_name).detach().cpu().numpy().tolist()
             for image_name in self.gaussians.exposure_mapping

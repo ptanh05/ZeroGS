@@ -32,6 +32,7 @@ class ByteCostModel:
         cuda_padding_bytes: int = 1024 * 1024,  # 1MB CUDA block padding
         clone_fixed_overhead_bytes: int = 0,
         split_fixed_overhead_bytes: int = 0,
+        optimizer_type: str = "default",
     ):
         """
         Args:
@@ -41,6 +42,7 @@ class ByteCostModel:
             clone_multiplier: Empirical transient multiplier for clone (cat overhead + fragmentation).
             split_multiplier: Empirical transient multiplier for split (2x children + parent retention + Adam rebuild).
             cuda_padding_bytes: Safety padding for allocator block alignment (bytes).
+            optimizer_type: Optimizer type ("default", "half_adam"/"fp16_adam", "int8_adam"/"adam8bit").
         """
         self.sh_degree = sh_degree
         self.use_adam = use_adam
@@ -50,6 +52,7 @@ class ByteCostModel:
         self.cuda_padding_bytes = cuda_padding_bytes
         self.clone_fixed_overhead_bytes = int(clone_fixed_overhead_bytes)
         self.split_fixed_overhead_bytes = int(split_fixed_overhead_bytes)
+        self.optimizer_type = str(optimizer_type).lower()
 
         self.recalculate_constants()
 
@@ -72,10 +75,20 @@ class ByteCostModel:
         self.grad_bytes_per_gaussian = self.param_bytes_per_gaussian
 
         # Adam optimizer states: exp_avg (moment 1) + exp_avg_sq (moment 2)
-        if self.use_adam:
-            self.adam_states_bytes_per_gaussian = 2 * self.param_bytes_per_gaussian
-        else:
+        if not self.use_adam:
             self.adam_states_bytes_per_gaussian = 0
+        elif self.optimizer_type in ["int8_adam", "adam8bit", "int8"]:
+            # Int8 quantized Adam: 1 byte (int8 exp_avg) + 1 byte (uint8 exp_avg_sq) = 2 bytes/float
+            # 59 floats * 2 bytes = 118 bytes/Gaussian (75% savings over FP32 Adam)
+            self.adam_states_bytes_per_gaussian = int(0.5 * self.param_bytes_per_gaussian)
+        elif self.optimizer_type in ["half_adam", "fp16_adam", "fp16"]:
+            # Half-precision Adam: 2 bytes (fp16 exp_avg) + 2 bytes (fp16 exp_avg_sq) = 4 bytes/float
+            # 59 floats * 4 bytes = 236 bytes/Gaussian (50% savings over FP32 Adam)
+            self.adam_states_bytes_per_gaussian = int(1.0 * self.param_bytes_per_gaussian)
+        else:
+            # Default FP32 Adam: 4 bytes (fp32 exp_avg) + 4 bytes (fp32 exp_avg_sq) = 8 bytes/float
+            # 59 floats * 8 bytes = 472 bytes/Gaussian
+            self.adam_states_bytes_per_gaussian = 2 * self.param_bytes_per_gaussian
 
         # Total persistent bytes per Gaussian on GPU during training
         # Parameters + Gradients + Optimizer states

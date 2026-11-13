@@ -75,10 +75,18 @@ For Spherical Harmonics degree $d = 3$:
 At float32 ($4 \text{ bytes/float}$):
 $$B_{param} = 59 \times 4 = 236 \text{ Bytes/Gaussian}$$
 
-#### Persistent GPU Memory Footprint:
+#### Persistent GPU Memory Footprint & Optimizer Tiers:
 Training utilizes gradient buffers and Adam optimizer moments (`exp_avg`, `exp_avg_sq`):
-$$B_{grad} = 236 \text{ Bytes}, \quad B_{adam} = 2 \times 236 = 472 \text{ Bytes}$$
-$$B_{persistent} = B_{param} + B_{grad} + B_{adam} = 944 \text{ Bytes/Gaussian}$$
+- **Tier 1 (Default FP32 Adam):**
+  $$B_{grad} = 236 \text{ Bytes}, \quad B_{adam} = 2 \times 236 = 472 \text{ Bytes}$$
+  $$B_{persistent} = B_{param} + B_{grad} + B_{adam} = 944 \text{ Bytes/Gaussian}$$
+- **Tier 2 (HalfPrecisionAdam - FP16 Moments):**
+  Moments stored in `torch.float16` ($2 \text{ bytes/float}$):
+  $$B_{adam} = 2 \times (59 \times 2) = 236 \text{ Bytes} \quad \implies B_{persistent} = 236 + 236 + 236 = 708 \text{ Bytes/Gaussian} \ (-25\%)$$
+- **Tier 3 (Int8GaussianAdam - Dynamic Log-Quantized):**
+  First moment in signed `int8` ($1 \text{ byte}$) and second moment in logarithmic `uint8` ($1 \text{ byte}$):
+  $$B_{adam} = 59 \times 1 + 59 \times 1 = 118 \text{ Bytes} \quad \implies B_{persistent} = 236 + 236 + 118 = 590 \text{ Bytes/Gaussian} \ (-37.5\%)$$
+  Enables rigorous budget adherence under extreme 4GB VRAM targets.
 
 #### Transient Memory Spike Formulation:
 During densification:

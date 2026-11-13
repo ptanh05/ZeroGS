@@ -266,9 +266,14 @@ class GaussianModel:
             {'params': [self._rotation], 'lr': getattr(training_args, "rotation_lr", 0.001), "name": "rotation"}
         ]
 
-        if self.optimizer_type == "default":
-            self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        elif self.optimizer_type == "sparse_adam":
+        opt_type = str(self.optimizer_type).lower()
+        if opt_type in ["half_adam", "fp16_adam", "fp16"]:
+            from zerogs.optimizers import HalfPrecisionAdam
+            self.optimizer = HalfPrecisionAdam(l, lr=0.0, eps=1e-15)
+        elif opt_type in ["int8_adam", "adam8bit", "int8"]:
+            from zerogs.optimizers import Int8GaussianAdam
+            self.optimizer = Int8GaussianAdam(l, lr=0.0, eps=1e-15)
+        elif opt_type == "sparse_adam":
             if SparseGaussianAdam is not None:
                 try:
                     self.optimizer = SparseGaussianAdam(l, lr=0.0, eps=1e-15)
@@ -358,6 +363,96 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
+    def save_splat(self, path):
+        """
+        Exports Gaussians to standard 32-byte .splat format.
+        Compatible with Antimatter15 WebGL viewer, SuperSplat, PlayCanvas, and Luma.
+        Each Gaussian takes exactly 32 bytes:
+        - Position: 3 x float32 (12 bytes)
+        - Scale: 3 x float32 (12 bytes)
+        - Color: 4 x uint8 RGBA (4 bytes)
+        - Rotation: 4 x uint8 quaternion (4 bytes)
+        Total: 32 bytes/Gaussian (shrinks a 175MB PLY down to ~22MB).
+        """
+        mkdir_p(os.path.dirname(path))
+        with torch.no_grad():
+            xyz = self._xyz.detach().cpu().to(torch.float32)
+            scaling = torch.exp(self._scaling).detach().cpu().to(torch.float32)
+
+            # Color from SH0 (SH_C0 = 0.28209479177387814)
+            SH_C0 = 0.28209479177387814
+            rgb = (self._features_dc[:, 0, :] * SH_C0 + 0.5).clamp(0.0, 1.0)
+            rgb_u8 = (rgb * 255.0).round().to(torch.uint8).cpu()
+
+            alpha = torch.sigmoid(self._opacity).clamp(0.0, 1.0)
+            alpha_u8 = (alpha * 255.0).round().to(torch.uint8).cpu()
+            rgba_u8 = torch.cat([rgb_u8, alpha_u8], dim=-1)
+
+            # Rotation (normalized quaternion) mapped to uint8
+            rot = self._rotation.detach().cpu()
+            rot_norm = torch.nn.functional.normalize(rot, dim=-1)
+            rot_u8 = (rot_norm * 128.0 + 128.0).clamp(0, 255).round().to(torch.uint8)
+
+            n_gaussians = xyz.shape[0]
+            xyz_np = xyz.numpy()
+            scale_np = scaling.numpy()
+            rgba_np = rgba_u8.numpy()
+            rot_np = rot_u8.numpy()
+
+            splat_dtype = np.dtype([
+                ('x', '<f4'), ('y', '<f4'), ('z', '<f4'),
+                ('sx', '<f4'), ('sy', '<f4'), ('sz', '<f4'),
+                ('r', 'u1'), ('g', 'u1'), ('b', 'u1'), ('a', 'u1'),
+                ('q0', 'u1'), ('q1', 'u1'), ('q2', 'u1'), ('q3', 'u1')
+            ])
+
+            splat_buffer = np.empty(n_gaussians, dtype=splat_dtype)
+            splat_buffer['x'] = xyz_np[:, 0]
+            splat_buffer['y'] = xyz_np[:, 1]
+            splat_buffer['z'] = xyz_np[:, 2]
+            splat_buffer['sx'] = scale_np[:, 0]
+            splat_buffer['sy'] = scale_np[:, 1]
+            splat_buffer['sz'] = scale_np[:, 2]
+            splat_buffer['r'] = rgba_np[:, 0]
+            splat_buffer['g'] = rgba_np[:, 1]
+            splat_buffer['b'] = rgba_np[:, 2]
+            splat_buffer['a'] = rgba_np[:, 3]
+            splat_buffer['q0'] = rot_np[:, 0]
+            splat_buffer['q1'] = rot_np[:, 1]
+            splat_buffer['q2'] = rot_np[:, 2]
+            splat_buffer['q3'] = rot_np[:, 3]
+
+            splat_buffer.tofile(path)
+
+    def save_compressed(self, path):
+        """
+        Exports full-fidelity compressed Gaussian representation (.npz).
+        Stores positions, spherical harmonics (degrees 0-3), opacities, scales,
+        and rotations in half-precision (FP16) with zip/deflate compression.
+        Preserves all view-dependent SH color variations while reducing file size
+        to ~30MB - 40MB.
+        """
+        mkdir_p(os.path.dirname(path))
+        with torch.no_grad():
+            xyz = self._xyz.detach().cpu().to(torch.float16).numpy()
+            f_dc = self._features_dc.detach().cpu().to(torch.float16).numpy()
+            f_rest = self._features_rest.detach().cpu().to(torch.float16).numpy()
+            opacity = self._opacity.detach().cpu().to(torch.float16).numpy()
+            scaling = self._scaling.detach().cpu().to(torch.float16).numpy()
+            rotation = self._rotation.detach().cpu().to(torch.float16).numpy()
+
+            np.savez_compressed(
+                path,
+                xyz=xyz,
+                features_dc=f_dc,
+                features_rest=f_rest,
+                opacity=opacity,
+                scaling=scaling,
+                rotation=rotation,
+                active_sh_degree=self.active_sh_degree,
+                max_sh_degree=self.max_sh_degree,
+            )
+
     def reset_opacity(self):
         opacities_new = self.inverse_opacity_activation(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
@@ -440,9 +535,13 @@ class GaussianModel:
                 stored_state = self.optimizer.state.get(group['params'][0], None)
                 if stored_state is not None:
                     if "exp_avg" in stored_state:
-                        stored_state["exp_avg"] = torch.zeros_like(tensor)
+                        stored_state["exp_avg"] = torch.zeros_like(tensor, dtype=stored_state["exp_avg"].dtype)
                     if "exp_avg_sq" in stored_state:
-                        stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+                        stored_state["exp_avg_sq"] = torch.zeros_like(tensor, dtype=stored_state["exp_avg_sq"].dtype)
+                    if "exp_avg_int8" in stored_state:
+                        stored_state["exp_avg_int8"] = torch.zeros_like(tensor, dtype=torch.int8)
+                    if "exp_avg_sq_uint8" in stored_state:
+                        stored_state["exp_avg_sq_uint8"] = torch.zeros_like(tensor, dtype=torch.uint8)
 
                     del self.optimizer.state[group['params'][0]]
                     group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
@@ -485,6 +584,10 @@ class GaussianModel:
                     stored_state["exp_avg"] = stored_state["exp_avg"][mask]
                 if "exp_avg_sq" in stored_state:
                     stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
+                if "exp_avg_int8" in stored_state:
+                    stored_state["exp_avg_int8"] = stored_state["exp_avg_int8"][mask]
+                if "exp_avg_sq_uint8" in stored_state:
+                    stored_state["exp_avg_sq_uint8"] = stored_state["exp_avg_sq_uint8"][mask]
 
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
@@ -535,9 +638,17 @@ class GaussianModel:
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 if "exp_avg" in stored_state:
-                    stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
+                    ext_zeros = torch.zeros_like(extension_tensor, dtype=stored_state["exp_avg"].dtype)
+                    stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], ext_zeros), dim=0)
                 if "exp_avg_sq" in stored_state:
-                    stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
+                    ext_zeros = torch.zeros_like(extension_tensor, dtype=stored_state["exp_avg_sq"].dtype)
+                    stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], ext_zeros), dim=0)
+                if "exp_avg_int8" in stored_state:
+                    ext_zeros = torch.zeros_like(extension_tensor, dtype=torch.int8)
+                    stored_state["exp_avg_int8"] = torch.cat((stored_state["exp_avg_int8"], ext_zeros), dim=0)
+                if "exp_avg_sq_uint8" in stored_state:
+                    ext_zeros = torch.zeros_like(extension_tensor, dtype=torch.uint8)
+                    stored_state["exp_avg_sq_uint8"] = torch.cat((stored_state["exp_avg_sq_uint8"], ext_zeros), dim=0)
 
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))

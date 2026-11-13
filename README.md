@@ -136,20 +136,34 @@ python experiments/profile_clone_vs_split.py
 
 Then train with hard budget constraints. Real training fails fast when the dataset is missing and requires native rasterizer statistics for occlusion-aware runs:
 ```bash
-# Train with an explicit 6GB VRAM limit and 512MB safety headroom
+# Standard training with an explicit 6GB VRAM limit and 512MB safety headroom
 python train.py -s <path_to_colmap_scene> -m output/model_6gb \
   --hard_vram_limit_mb 6144.0 --safety_headroom_mb 512.0 \
   --cost_calibration experiments/results/cost_calibration.json \
   --gamma_occ 0.35 --seed 0
+
+# Ultra-Low Budget Training (Target 4GB VRAM) with Int8 Log-Quantized Adam (75% optimizer savings):
+python train.py -s <path_to_colmap_scene> -m output/model_4gb \
+  --optimizer_type int8_adam --hard_vram_limit_mb 4096.0 --safety_headroom_mb 256.0
+
+# Memory-Efficient Training with Half-Precision FP16 Adam (50% optimizer savings):
+python train.py -s <path_to_colmap_scene> -m output/model_half \
+  --optimizer_type half_adam --hard_vram_limit_mb 5120.0
 ```
 
-Simulation is explicit and is intended only for smoke tests:
+### 5. Compact Model Export (Web-Ready .splat & .npz)
 
+ZeroGS automatically outputs ultra-compact model formats at the end of training:
+1. `point_cloud.ply`: Standard full FP32 PLY point cloud.
+2. `point_cloud.splat`: Standard 32-byte/Gaussian WebGL format (7.8× smaller, e.g. Bonsai shrinks from 166.8MB to **21.5MB**). Drag-and-drop compatible with [Antimatter15 Web Viewer](https://antimatter15.com/splat/), SuperSplat, and PlayCanvas.
+3. `point_cloud_compressed.npz`: Full-fidelity half-precision archive preserving all SH degree 3 directional appearance (2.6× smaller).
+
+To batch-export existing trained models:
 ```bash
-python train.py --simulation_mode --iterations 10 -m output/smoke
+python scripts/export_all_splats.py
 ```
 
-### 5. Evaluation & Metric Calculation
+### 6. Evaluation & Metric Calculation
 
 Render test camera viewpoints from a trained model and calculate quantitative metrics (PSNR, SSIM, LPIPS):
 ```bash

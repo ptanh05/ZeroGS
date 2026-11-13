@@ -152,6 +152,7 @@ def training(
     non_pytorch_allowance_mb = getattr(opt, "non_pytorch_allowance_mb", 256.0)
 
     calibration_path = getattr(opt, "cost_calibration", None)
+    optimizer_type = getattr(opt, "optimizer_type", "default")
     if calibration_path:
         cost_model = ByteCostModel.from_calibration_file(calibration_path)
         if cost_model.sh_degree != dataset.sh_degree:
@@ -159,12 +160,15 @@ def training(
                 f"Calibration SH degree {cost_model.sh_degree} does not match dataset "
                 f"SH degree {dataset.sh_degree}"
             )
+        cost_model.optimizer_type = optimizer_type
+        cost_model.recalculate_constants()
     else:
         cost_model = ByteCostModel(
             sh_degree=dataset.sh_degree,
             use_adam=True,
             clone_multiplier=1.15,
             split_multiplier=2.30,
+            optimizer_type=optimizer_type,
         )
         if not is_simulation:
             print(

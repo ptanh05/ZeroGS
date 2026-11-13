@@ -21,6 +21,7 @@ from .occlusion_engine import OcclusionAwareEngine, OcclusionAwareDemandEstimato
 from .marginal_allocator import MarginalUtilityAllocator
 from .scheduler import MemoryBoundedDensificationScheduler
 from .memory_telemetry import CudaMemorySnapshot, JsonlTelemetryWriter, capture_cuda_memory
+from .optimizers import HalfPrecisionAdam, Int8GaussianAdam
 
 __version__ = "1.0.0"
 __author__ = "Phung The Anh"
@@ -39,4 +40,6 @@ __all__ = [
     "CudaMemorySnapshot",
     "JsonlTelemetryWriter",
     "capture_cuda_memory",
+    "HalfPrecisionAdam",
+    "Int8GaussianAdam",
 ]
