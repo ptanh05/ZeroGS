@@ -164,12 +164,26 @@ def main():
     python_exe = sys.executable
     out_base = Path(args.output_dir)
     out_base.mkdir(parents=True, exist_ok=True)
+    scene_name = Path(args.source_path).name
 
     matrix = []
+    if not args.skip_int8:
+        matrix.append({
+            "name": "ZeroGS_INT8",
+            "model_path": str(out_base / f"{scene_name}_zerogs_int8"),
+            "optimizer_type": "int8_adam",
+            "flags": [
+                "--hard_vram_limit_mb", "4096.0",
+                "--safety_headroom_mb", "256.0",
+                "--non_pytorch_allowance_mb", "256.0",
+                "--pruning_mode", "legacy_as_is",
+            ],
+            "description": "ZeroGS with Int8GaussianAdam and Preservation Lifecycle under 4096MB hard budget",
+        })
     if not args.skip_vanilla:
         matrix.append({
             "name": "Vanilla_FP32",
-            "model_path": str(out_base / "bonsai_vanilla_fp32"),
+            "model_path": str(out_base / f"{scene_name}_vanilla_fp32"),
             "optimizer_type": "default",
             "flags": ["--disable_zero_oom"],
             "description": "Vanilla 3DGS baseline with default FP32 Adam (unconstrained)",
@@ -177,41 +191,38 @@ def main():
     if not args.skip_fp32:
         matrix.append({
             "name": "ZeroGS_FP32",
-            "model_path": str(out_base / "bonsai_zerogs_fp32"),
+            "model_path": str(out_base / f"{scene_name}_zerogs_fp32"),
             "optimizer_type": "default",
             "flags": [
                 "--hard_vram_limit_mb", "4096.0",
                 "--safety_headroom_mb", "256.0",
                 "--non_pytorch_allowance_mb", "256.0",
+                "--pruning_mode", "legacy_as_is",
             ],
-            "description": "ZeroGS with default FP32 Adam under 4096MB hard budget",
+            "description": "ZeroGS with default FP32 Adam and Preservation Lifecycle under 4096MB hard budget",
         })
     if not args.skip_fp16:
         matrix.append({
             "name": "ZeroGS_FP16",
-            "model_path": str(out_base / "bonsai_zerogs_fp16"),
+            "model_path": str(out_base / f"{scene_name}_zerogs_fp16"),
             "optimizer_type": "half_adam",
             "flags": [
                 "--hard_vram_limit_mb", "4096.0",
                 "--safety_headroom_mb", "256.0",
                 "--non_pytorch_allowance_mb", "256.0",
+                "--pruning_mode", "legacy_as_is",
             ],
-            "description": "ZeroGS with HalfPrecisionAdam under 4096MB hard budget",
-        })
-    if not args.skip_int8:
-        matrix.append({
-            "name": "ZeroGS_INT8",
-            "model_path": str(out_base / "bonsai_zerogs_int8"),
-            "optimizer_type": "int8_adam",
-            "flags": [
-                "--hard_vram_limit_mb", "4096.0",
-                "--safety_headroom_mb", "256.0",
-                "--non_pytorch_allowance_mb", "256.0",
-            ],
-            "description": "ZeroGS with Int8GaussianAdam under 4096MB hard budget",
+            "description": "ZeroGS with HalfPrecisionAdam and Preservation Lifecycle under 4096MB hard budget",
         })
 
+    summary_path = out_base / "matrix_summary.json"
     summary_results = {}
+    if summary_path.exists():
+        try:
+            with open(summary_path, "r", encoding="utf-8") as f:
+                summary_results = json.load(f)
+        except Exception:
+            summary_results = {}
 
     for exp in matrix:
         name = exp["name"]
