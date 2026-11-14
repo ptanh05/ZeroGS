@@ -1,0 +1,8 @@
+{
+  "experiments\\results\\matrix_30k\\bonsai_zerogs_int8\\test\\ours_30000": {
+    "PSNR": 29.10277155283335,
+    "SSIM": 0.8921029197203146,
+    "LPIPS": 0.24730087011247068,
+    "num_views": 37
+  }
+}

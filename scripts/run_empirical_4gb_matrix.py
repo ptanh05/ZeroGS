@@ -238,6 +238,10 @@ def main():
 
         # 1. Train
         train_log = str(out_base / f"{name}_train.log")
+        save_iters = [str(args.iterations)]
+        if args.iterations > 7000 and "7000" not in save_iters:
+            save_iters.append("7000")
+
         train_cmd = [
             python_exe, "train.py",
             "-s", args.source_path,
@@ -245,8 +249,8 @@ def main():
             "-i", args.images,
             "--iterations", str(args.iterations),
             "--eval",
-            "--test_iterations", str(args.iterations),
-            "--save_iterations", str(args.iterations),
+            "--test_iterations", *save_iters,
+            "--save_iterations", *save_iters,
             "--optimizer_type", opt_type,
         ] + extra_flags
 

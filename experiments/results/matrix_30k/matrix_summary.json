@@ -1,0 +1,41 @@
+{
+  "ZeroGS_INT8": {
+    "name": "ZeroGS_INT8",
+    "description": "ZeroGS with Int8GaussianAdam and Preservation Lifecycle under 4096MB hard budget",
+    "status": "completed",
+    "oom": false,
+    "training_time_sec": 2612.5,
+    "training_speed_it_per_sec": 11.48,
+    "metrics": {
+      "PSNR": 29.10277155283335,
+      "SSIM": 0.8921029197203146,
+      "LPIPS": 0.24730087011247068,
+      "num_views": 37
+    },
+    "telemetry": {
+      "peak_allocated_mb": 2574.66,
+      "peak_reserved_mb": 3704.0,
+      "final_gaussians": 378235,
+      "admission_evaluations": 162,
+      "prune_first_triggers": 18,
+      "shrink_triggers": 0,
+      "pruned_via_admission": 437318
+    },
+    "files": {
+      "ply_exists": true,
+      "ply_size_mb": 89.46,
+      "ply_valid": true,
+      "ply_points": 378235,
+      "splat_exists": true,
+      "splat_size_mb": 11.54,
+      "splat_valid": true,
+      "splat_points": 378235,
+      "npz_exists": true,
+      "npz_size_mb": 35.07,
+      "npz_valid": true,
+      "npz_points": 378235,
+      "splat_compression_ratio": 7.75,
+      "npz_compression_ratio": 2.55
+    }
+  }
+}
