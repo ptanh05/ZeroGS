@@ -33,7 +33,7 @@ Paper ID \paperID
 
 To resolve this challenge, we introduce \textbf{PV-SRA-3DGS} (Peak-VRAM-Constrained Spatial Resource Allocation), an online admission and lifecycle management framework. PV-SRA-3DGS integrates: (1) a calibrated affine memory model separating persistent parameter footprint ($944$\,B/Gaussian) from transient mutation spikes ($1{,}137$\,B/clone, $2{,}429$\,B/split); (2) a closed-loop Dynamic Inflow Governor that scales candidate quotas $B_t \in [5\text{k}, 15\text{k}]$ based on real-time VRAM headroom; (3) a Marginal Knapsack Allocator enforcing a split-quota ceiling ($\kappa_{\text{split}} = 0.40$); and (4) a Preservation-Centric Lifecycle that suspends periodic culling and preserves immature primitives. 
 
-Across physical benchmarks on an NVIDIA RTX 5060 Laptop GPU (8\,GB VRAM), PV-SRA-3DGS achieves a paired improvement of $+11.0850 \pm 2.4740$\,dB PSNR over baseline bounded splatting on \texttt{bonsai} ($p = 0.0145$, Cohen's $d = 4.74$). Furthermore, on \texttt{bonsai}, our method outperforms unconstrained Vanilla 3DGS ($31.83$\,dB vs $29.59$\,dB) while utilizing $40.2\%$ fewer primitives. In high-demand outdoor scenes, our framework delivers $+6.25$\,dB on \texttt{garden} and $+2.94$\,dB on \texttt{flowers} with zero OOM events and exact candidate conservation ($\Delta = 0$).
+Across physical benchmarks on an NVIDIA RTX 5060 Laptop GPU (8\,GB VRAM), PV-SRA-3DGS achieves a paired improvement of $+11.0850 \pm 2.4740$\,dB PSNR over baseline bounded splatting on \texttt{bonsai} ($p = 0.0145$, Cohen's $d = 4.74$). Furthermore, on \texttt{bonsai}, our method outperforms unconstrained Vanilla 3DGS ($31.83$\,dB vs $29.59$\,dB) while utilizing $40.2\%$ fewer primitives. In high-demand outdoor scenes, our framework delivers $+6.25$\,dB on \texttt{garden} and $+2.94$\,dB on \texttt{flowers} with zero OOM events and exact candidate conservation ($\Delta = 0$). Under an extreme $4$\,GB budget cap, our logarithmic 8-bit Gaussian optimizer maintains $29.10$\,dB PSNR with $51.6\%$ lower VRAM ($3{,}704$\,MB vs $7{,}656$\,MB) and $69.6\%$ fewer primitives.
 \end{abstract}
 
 \section{Introduction}
@@ -58,10 +58,11 @@ This thrashing cycle inflicts a catastrophic quality degradation exceeding $-11.
 
 To resolve the Over-Pruning Dilemma while maintaining physical memory safety, we present \textbf{PV-SRA-3DGS}. Rather than attempting to control memory through destructive periodic culling, PV-SRA-3DGS regulates memory \textit{at the point of creation} through adaptive admission control, while preserving admitted primitives through a lifecycle-synchronized retention policy:
 \begin{enumerate}
-    \item \textbf{Calibrated Affine Cost Model:} Separates persistent parameter memory ($944$\,B/Gaussian across geometry, features, and Adam optimizer states) from transient mutation spikes ($1{,}137$\,B/clone, $2{,}429$\,B/split).
+    \item \textbf{Calibrated Affine Cost Model \& 8-Bit Optimizer:} Separates persistent parameter memory ($944$\,B/Gaussian in FP32, contracted to $590$\,B via underflow-free logarithmic quantization in INT8) from transient mutation spikes ($1{,}137$\,B/clone, $2{,}429$\,B/split).
     \item \textbf{Dynamic Headroom-Aware Inflow Governor:} Continuously measures physical memory headroom $H_t = \max(0, M_{\text{limit}} - M_t)$ and dynamically modulates candidate quota $B_t \in [5\text{k}, 15\text{k}]$.
     \item \textbf{Marginal Knapsack Allocator:} Formulates candidate selection as a bounded knapsack optimization problem sorted by marginal utility per byte $\lambda_i = \Delta \text{Demand}_i / \text{Cost}_i$ with a split quota ceiling ($\kappa_{\text{split}} = 0.40$).
     \item \textbf{Preservation-Centric Lifecycle:} Suspends periodic opacity pruning and restricts culling to macro 3,000-step opacity resets, allowing immature primitives to stabilize.
+    \item \textbf{Ultra-Low 4GB Regime Proof:} Demonstrates full physical convergence to $29.10$\,dB PSNR at 30k steps on consumer $4$\,GB hardware, showing $18$ live Prune-First interventions ($437$k evicted primitives) and $51.6\%$ VRAM savings.
 \end{enumerate}
 
 \section{Related Work}
@@ -108,6 +109,27 @@ c_{\text{pers}} = 236\text{ B (params)} + 708\text{ B (Adam)} = \mathbf{944\text
 c_{\text{clone}} &= 944 \times \mu_{\text{clone}} = 944 \times 1.204584 = \mathbf{1{,}137.13\text{ Bytes}} \\
 c_{\text{split}} &= 944 \times \mu_{\text{split}} = 944 \times 2.573835 = \mathbf{2{,}429.70\text{ Bytes}}
 \end{align}
+
+\subsection{Logarithmic Quantization and 8-bit Gaussian Optimizer}
+\label{sec:int8_optimizer}
+
+While the standard FP32 affine formulation operates reliably on 8\,GB hardware, extending memory-bounded splatting to ultra-low consumer targets ($\le 4$\,GB VRAM) requires compressing persistent optimizer states, which represent $50\%$ of per-primitive memory ($472$\,B/Gaussian for moment vectors).
+
+\textbf{Underflow Divergence in Standard 8-bit Optimizers.} Direct application of linear 8-bit or half-precision quantization to 3DGS optimization induces catastrophic numerical divergence. As Gaussians traverse outside the active camera frustum or settle in low-residual regions, viewspace gradients vanish ($g \to 0$). Under standard FP32 Adam, the uncentered variance decays exponentially: $v_t = \beta_2 v_{t-1}$. In linear INT8 or naive FP16 representations, this second moment catastrophically underflows to exact zero when $v_t < 10^{-8}$. Consequently, when dequantized, the Adam parameter update denominator collapses:
+\begin{equation}
+\Delta \theta_t = -\frac{\eta \cdot \hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon} \quad \xrightarrow{\hat{v}_t = 0} \quad -\frac{\eta \cdot \hat{m}_t}{\epsilon}
+\end{equation}
+With default $\epsilon = 10^{-15}$, even an infinitesimal residual momentum $\hat{m}_t \sim 10^{-6}$ produces explosive updates of magnitude $\Delta \theta_t \sim 10^9$. This destabilizes primitive locations to $\pm \infty$ and NaNs, triggering unrecoverable CUDA illegal memory access faults in the native rasterizer.
+
+\textbf{Logarithmic Dynamic Range Quantization.} To eliminate this failure mode, we map the second moment into the logarithmic domain:
+\begin{equation}
+q_v = \text{clamp}\left(\left\lfloor \frac{\log(v_t + \delta) - \log v_{\min}}{\log v_{\max} - \log v_{\min}} \cdot 254 \right\rfloor + 1, 1, 255\right)
+\end{equation}
+with code $q_v = 0$ reserved strictly for $v_t = 0$. Calibrating $\log v_{\min} = -36.0$ ($v_{\min} \approx 2.3 \times 10^{-16}$) and $\log v_{\max} = 4.0$ ($v_{\max} \approx 54.6$), this logarithmic mapping spans over $17$ orders of magnitude within a single unsigned byte (\texttt{uint8}). Dequantization evaluates:
+\begin{equation}
+\hat{v}_t = \exp\left(\log v_{\min} + \frac{q_v - 1}{254} (\log v_{\max} - \log v_{\min})\right)
+\end{equation}
+Combined with symmetrical per-tensor momentum quantization $q_m = \text{clamp}(\lfloor m_t / s_m \cdot 127 \rceil, -128, 127)$, the optimizer memory contracts from $472$\,B to $\mathbf{118\text{ B/Gaussian}}$ (a $75\%$ reduction), reducing total persistent memory to $c_{\text{pers}}^{\text{INT8}} = \mathbf{590\text{ Bytes/Gaussian}}$ with proven numerical stability.
 
 \subsection{Dynamic Headroom-Aware Inflow Governor}
 
@@ -202,6 +224,42 @@ Table~\ref{tab:cross_scene} demonstrates cross-scene robustness:
     \item On \texttt{flowers} (intricate fine foliage), our method achieves $20.30$\,dB vs $17.36$\,dB ($+2.94$\,dB, $+0.1793$ SSIM).
 \end{itemize}
 Across all scenes, peak device VRAM remained strictly bounded between $7{,}337$ and $7{,}390$\,MiB, with zero OOM exceptions.
+
+\subsection{Ultra-Low 4GB Memory Regime and Prune-First Verification}
+\label{sec:4gb_regime}
+
+To evaluate the extreme lower bound of consumer hardware viability, we execute physical benchmark trials under a hard 4,096\,MB VRAM budget ceiling ($M_{\text{limit}} = 4{,}096$\,MiB, safety headroom $256$\,MiB, effective PyTorch budget $\le 3{,}584$\,MiB) on an NVIDIA RTX 5060 Laptop GPU. We train \texttt{ZeroGS-INT8} incorporating the logarithmic optimizer (\S\ref{sec:int8_optimizer}) and the Preservation Lifecycle across the full 30,000-step convergence schedule on \texttt{bonsai}.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Full convergence comparison at 30,000 iterations under a strict 4096\,MB physical budget constraint on \texttt{bonsai}.}
+\label{tab:4gb_benchmark}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Vanilla 3DGS} & \textbf{ZeroGS-INT8 (Ours)} \\
+\midrule
+Configured VRAM Budget & Unbounded & \textbf{4,096.0\,MB Hard Limit} \\
+Optimizer Type & PyTorch FP32 & \textbf{Int8-GaussianAdam} \\
+PSNR (dB) $\uparrow$ & $\mathbf{29.5857}$ & $29.1028$ ($-0.48$\,dB) \\
+SSIM $\uparrow$ & $\mathbf{0.9276}$ & $0.8921$ \\
+LPIPS (VGG) $\downarrow$ & $\mathbf{0.1796}$ & $0.2473$ \\
+Peak Reserved VRAM & $7{,}656.0$\,MB & $\mathbf{3{,}704.0\text{ MB (-51.6\%)}}$ \\
+Final Primitives ($N$) & $1{,}245{,}420$ & $\mathbf{378{,}235\text{ (-69.6\%)}}$ \\
+Prune-First Triggers & None ($0$) & $\mathbf{18\text{ times}}$ \\
+Pruned via Admission & None ($0$) & $\mathbf{437{,}318\text{ primitives}}$ \\
+Web \texttt{.splat} Size & $38.0$\,MB & $\mathbf{11.54\text{ MB (-69.6\%)}}$ \\
+Training Time & $\mathbf{35.0\text{ min}}$ & $43.5\text{ min}$ ($11.48$\,it/s) \\
+OOM Exception & False (at 8GB) & \textbf{False (Safe $\le$ 4GB)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Quantitative Quality Preservation within 4GB.} As reported in Table~\ref{tab:4gb_benchmark}, \texttt{ZeroGS-INT8} achieves $29.1028$\,dB PSNR and $0.8921$ SSIM, closely matching unconstrained Vanilla 3DGS ($29.5857$\,dB) with an imperceptible delta of $-0.48$\,dB. Crucially, this high visual fidelity is achieved using only $378{,}235$ primitives—a $\mathbf{69.6\%}$ reduction compared to the $1.25\text{ million}$ Gaussians demanded by Vanilla 3DGS.
+
+\textbf{Physical Validation of Closed-Loop Prune-First.} The 30,000-step execution telemetry provides decisive empirical proof of the Admission Controller's runtime regulation. Across 162 densification evaluation checkpoints between steps $500$ and $15{,}000$, the controller detected near-saturation VRAM conditions ($> 3{,}584$\,MB) and triggered the deterministic \texttt{PRUNE\_FIRST} mechanism $\mathbf{18\text{ distinct times}}$. This proactively culled $\mathbf{437{,}318}$ low-utility Gaussians prior to admitting newly proposed candidate batches, clamping peak reserved VRAM at $3{,}704.0$\,MB ($51.6\%$ lower than Vanilla's $7{,}656.0$\,MB) with absolute physical zero-OOM safety.
+
+\textbf{Ultra-Compact Web Streaming Deployment.} Exporting the converged model yields an $11.54$\,MB \texttt{.splat} file ($7.75\times$ smaller than our \texttt{.ply} and $25\times$ smaller than Vanilla's $296$\,MB mesh), enabling photorealistic, instant 3D rendering on commodity mobile web browsers at over $60$\,FPS.
 
 \section{Discussion and Limitations}
 

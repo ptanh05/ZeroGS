@@ -79,3 +79,4 @@ Toàn bộ số liệu dưới đây được trích xuất trực tiếp từ l
 1. **Hiệu quả giới hạn VRAM:** Cơ chế Hard Budget 4096 MB của ZeroGS hoạt động chính xác 100%. Trong khi Vanilla 3DGS đạt đỉnh 4,544 MB (vượt ngân sách), ZeroGS khóa chặt VRAM ở mức ~3,098 MB mà không gặp bất kỳ lỗi CUDA hay OOM nào.
 2. **Hiệu quả của INT8 Optimizer:** `Int8GaussianAdam` thực sự hoạt động trong training vật lý, lưu trữ trạng thái ở dạng `int8`/`uint8`, giảm 75% VRAM của optimizer states, và đạt chất lượng hình ảnh cao nhất (14.70 dB PSNR).
 3. **Hiệu quả của Pipeline Xuất Dữ Liệu:** Cả 3 định dạng `.ply`, `.splat`, và `.npz` đều được tạo tự động, kiểm tra tính toàn vẹn 100%, sẵn sàng cho cả render nghiên cứu chất lượng cao và hiển thị thời gian thực trên web.
+
