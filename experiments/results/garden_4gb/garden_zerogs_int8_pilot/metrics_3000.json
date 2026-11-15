@@ -1,0 +1,8 @@
+{
+  "experiments\\results\\garden_4gb\\garden_zerogs_int8_pilot\\test\\ours_3000": {
+    "PSNR": 14.58785879611969,
+    "SSIM": 0.29920058076580364,
+    "LPIPS": 0.7402247240146002,
+    "num_views": 24
+  }
+}

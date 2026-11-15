@@ -115,7 +115,10 @@ def training(
         gaussians.training_setup(opt)
         print(f"[ZeroGS] Initialized optimizer: {type(gaussians.optimizer).__name__} (optimizer_type='{gaussians.optimizer_type}')")
         if checkpoint:
-            (model_params, first_iter) = torch.load(checkpoint)
+            try:
+                (model_params, first_iter) = torch.load(checkpoint, weights_only=False)
+            except TypeError:
+                (model_params, first_iter) = torch.load(checkpoint)
             gaussians.restore(model_params, opt)
         bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device=device)

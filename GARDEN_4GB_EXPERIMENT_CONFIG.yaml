@@ -1,0 +1,79 @@
+# ==============================================================================
+# ZERO-GS: GARDEN 4GB SCIENTIFIC VALIDATION CONFIGURATION
+# ==============================================================================
+# Experiment ID: exp_garden_4gb_zerogs_int8
+# Hypothesis: ZeroGS with Int8GaussianAdam and Preservation Lifecycle can train
+#             the unbounded outdoor Mip-NeRF 360 'garden' scene strictly within
+#             a 4,096 MiB physical VRAM ceiling with zero OOM events.
+# ==============================================================================
+
+provenance:
+  git_commit: "7d7cc4f6b653ae83e1604fa956c735a712ec8fb9"
+  git_branch: "phungtheanh"
+  timestamp_utc: "2026-11-14T06:30:00Z"
+  platform: "Windows 11 (AMD64)"
+  hardware_gpu: "NVIDIA GeForce RTX 5060 Laptop GPU"
+  gpu_vram_total_mb: 8150.56
+  python_version: "3.12.9"
+  torch_version: "2.6.0+cu128"
+
+dataset:
+  scene_name: "garden"
+  scene_path: "data/garden"
+  image_subfolder: "images_4"
+  downsampling_factor: 4
+  resolution: [1297, 840]
+  total_cameras: 185
+  train_cameras: 161
+  test_cameras: 24
+  llffhold: 8
+  eval_split_flag: "--eval"
+  data_device: "cpu"  # Host-pinned camera streaming, frees 3,140 MB VRAM from static image caching
+  initial_sparse_points: 138766
+
+memory_governance:
+  hard_vram_limit_mb: 4096.0
+  safety_headroom_mb: 256.0
+  non_pytorch_allowance_mb: 256.0
+  effective_pytorch_budget_mb: 3584.0
+  target_headroom_mb: 1024.0
+  enable_zero_oom: true
+  enable_deterministic_prune_first: true
+
+optimizer:
+  type: "int8"
+  class_name: "Int8GaussianAdam"
+  first_moment_format: "int8 (symmetric per-tensor dynamic scale)"
+  second_moment_format: "uint8 (logarithmic dynamic range [-36.0, 4.0], 17 orders of magnitude)"
+  eps: 1.0e-15
+  persistent_bytes_per_gaussian: 590
+  persistent_savings_vs_fp32: "75% of optimizer states (118 B vs 472 B)"
+
+spatial_admission:
+  pruning_mode: "legacy_as_is"  # Preservation-Centric Lifecycle (suspends destructive Stage 1 culling)
+  allocator_strategy: "gain_per_byte"  # Marginal Knapsack Allocator
+  inflow_mode: "dynamic"
+  inflow_cap_min: 5000
+  inflow_cap_max: 15000
+  kappa_split: 0.40  # Maximum fraction of split candidates in admitted batch
+  tau_age: 500       # Grace period window for newly spawned primitives
+  tau_reset: 400     # Cooldown iterations following macro opacity reset
+  densification_interval: 100
+  densification_start: 500
+  densification_end: 15000
+  opacity_reset_interval: 3000
+
+execution:
+  seed: 0
+  pilot_milestones: [1000, 3000]
+  full_milestones: [7000, 30000]
+  output_base_dir: "experiments/results/garden_4gb"
+  telemetry_file: "experiments/results/garden_4gb/garden_zerogs_int8_pilot/telemetry.jsonl"
+  train_log_file: "experiments/results/garden_4gb/garden_zerogs_int8_pilot/train.log"
+
+safety_tripwires:
+  max_allowed_vram_mb: 4096.0
+  abort_on_vram_budget_exceeded: true
+  abort_on_nan_inf: true
+  min_surviving_primitives: 20000
+

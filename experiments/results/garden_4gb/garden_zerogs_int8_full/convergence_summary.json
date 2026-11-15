@@ -1,0 +1,80 @@
+{
+  "scene": "data/garden",
+  "resumed_from": "experiments/results/garden_4gb/garden_zerogs_int8_full/chkpnt7000.pth",
+  "exit_code": 0,
+  "elapsed_sec": 2102.67,
+  "telemetry": {
+    "peak_allocated_mb": 1375.7,
+    "peak_reserved_mb": 3094.0,
+    "admission_evaluations": 83,
+    "prune_first_triggers": 3,
+    "shrink_triggers": 1,
+    "pruned_via_admission": 302246
+  },
+  "milestones": {
+    "7000": {
+      "checkpoint": {
+        "exists": true,
+        "points": 283906,
+        "size_mb": 67.15,
+        "has_nan_inf": false
+      },
+      "metrics": {
+        "PSNR": 19.566819270451862,
+        "SSIM": 0.39232214788595837,
+        "LPIPS": 0.6375750824809074,
+        "num_views": 24
+      }
+    },
+    "15000": {
+      "checkpoint": {
+        "exists": true,
+        "points": 547593,
+        "size_mb": 129.51,
+        "has_nan_inf": false
+      },
+      "metrics": {
+        "experiments/results/garden_4gb/garden_zerogs_int8_full/test/ours_7000": {
+          "PSNR": 19.566819270451862,
+          "SSIM": 0.39232214788595837,
+          "LPIPS": 0.6375750824809074,
+          "num_views": 24
+        },
+        "experiments/results/garden_4gb/garden_zerogs_int8_full/test/ours_15000": {
+          "PSNR": 21.7015704313914,
+          "SSIM": 0.5173885598778725,
+          "LPIPS": 0.5084860225518545,
+          "num_views": 24
+        }
+      }
+    },
+    "30000": {
+      "checkpoint": {
+        "exists": true,
+        "points": 547593,
+        "size_mb": 129.51,
+        "has_nan_inf": false
+      },
+      "metrics": {
+        "experiments/results/garden_4gb/garden_zerogs_int8_full/test/ours_30000": {
+          "PSNR": 22.84557072321574,
+          "SSIM": 0.5960088583330313,
+          "LPIPS": 0.4391282598177592,
+          "num_views": 24
+        },
+        "experiments/results/garden_4gb/garden_zerogs_int8_full/test/ours_7000": {
+          "PSNR": 19.566819270451862,
+          "SSIM": 0.39232214788595837,
+          "LPIPS": 0.6375750824809074,
+          "num_views": 24
+        },
+        "experiments/results/garden_4gb/garden_zerogs_int8_full/test/ours_15000": {
+          "PSNR": 21.7015704313914,
+          "SSIM": 0.5173885598778725,
+          "LPIPS": 0.5084860225518545,
+          "num_views": 24
+        }
+      }
+    }
+  }
+}

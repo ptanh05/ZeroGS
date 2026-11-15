@@ -1,0 +1,1 @@
+Namespace(sh_degree=3, source_path='C:\\Workspace\\Thuc hanh cac mon nam 3\\Năm 4\\NCKH-2026-2027\\ZeroGS\\data\\garden', model_path='experiments\\results\\garden_4gb\\garden_zerogs_int8_pilot', images='images_4', depths='', resolution=-1, white_background=False, train_test_exp=False, data_device='cpu', eval=True)

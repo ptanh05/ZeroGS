@@ -1,53 +1,153 @@
-# Byte-compiled / optimized / DLL files
+# ==============================================================================
+# ZeroGS Git Ignore Configuration
+# Comprehensive ignore rules for 3D Gaussian Splatting, CUDA builds, & research
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Byte-compiled / Python Execution Artifacts
+# ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 *.pyd
-*.obj
-*.exp
-*.lib
+*.pyo
 
-# C extensions & builds
+# ------------------------------------------------------------------------------
+# C / C++ / CUDA Build & Extension Artifacts
+# ------------------------------------------------------------------------------
 build/
 dist/
-downloads/
-eggs/
+wheels/
+*.egg
+*.egg-info/
 .eggs/
+MANIFEST
 lib/
 lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.lib
+*.exp
+*.a
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.ninja
+*.ninja_log
+*.ninja_deps
 
-# Virtual environments
-.venv/
+# Submodule builds (diff-gaussian-rasterization, simple-knn, fused-ssim)
+submodules/**/build/
+submodules/**/dist/
+submodules/**/*.egg-info/
+submodules/**/*.so
+submodules/**/*.pyd
+
+# ------------------------------------------------------------------------------
+# Virtual Environments & Package Managers
+# ------------------------------------------------------------------------------
 venv/
-ENV/
+.venv/
 env/
+ENV/
+venv_*/
+.conda/
+.mamba/
 .Python
+.installed.cfg
 
-# PyTest & Coverage
+# ------------------------------------------------------------------------------
+# Testing, Linting & Coverage
+# ------------------------------------------------------------------------------
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+zerogs_watchdog_test_*/
 
-# Logs & temporary files
+# ------------------------------------------------------------------------------
+# 3D Gaussian Splatting Datasets & Heavy Artifacts
+# ------------------------------------------------------------------------------
+# Datasets (raw images, undistorted, SfM points)
+data/
+datasets/
+downloads/
+
+# Large model weights and optimizer checkpoints
+*.pth
+*.pt
+*.ckpt
+*.bin
+
+# Dense 3D Point clouds and Splat archives
+*.ply
+*.splat
+*.npz
+
+# Heavy iteration point clouds and evaluation image renders
+point_cloud/
+**/point_cloud/
+**/renders/
+**/gt/
+
+# Generic training outputs
+output/
+runs/
+
+# ------------------------------------------------------------------------------
+# Temporary Files, Logs & Scratch Workspace
+# ------------------------------------------------------------------------------
+scratch/
+tmp/
+.tmp/
+.tmp_*/
 *.log
 *.tmp
-.tmp_*/
-.DS_Store
-Thumbs.db
-desktop.ini
+*.tmp_*
+*.temp
+*~
 
-# LaTeX compilation artifacts
+# Archives and compressed bundles
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# ------------------------------------------------------------------------------
+# OS-Specific Files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ------------------------------------------------------------------------------
+# IDE & Editor Configurations
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ------------------------------------------------------------------------------
+# LaTeX Compilation Artifacts (Paper Drafts)
+# ------------------------------------------------------------------------------
 *.aux
 *.bbl
 *.blg
@@ -57,20 +157,10 @@ desktop.ini
 *.fls
 *.fdb_latexmk
 *.synctex.gz
-
-# Large training checkpoints and heavy datasets
-output/
-runs/
-data/
-*.pth
-*.pt
-*.ply
-*.zip
-*.tar
-*.tar.gz
-
-# IDE settings
-.vscode/
-.idea/
-*.swp
-*.swo
+*.synctex(busy)
+*.nav
+*.snm
+*.vrb
+*.run.xml
+*-blx.bib
+*.bcf
