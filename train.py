@@ -9,13 +9,20 @@ Zero-OOM admission control and occlusion-compensated marginal utility scheduling
 
 import os
 import sys
+import time
 import json
 import platform
 import subprocess
 import uuid
+from pathlib import Path
 from argparse import ArgumentParser, Namespace
 from random import randint
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+
+# Captured before heavy imports (torch/CUDA/Scene) so that a stop flag written by a
+# supervisor right after spawning this process is not misclassified as stale.
+_PROCESS_START_TIME = time.time()
 
 import torch
 from tqdm import tqdm
@@ -86,6 +93,32 @@ def compute_photometric_loss(
     ssim_value = ssim(image, ground_truth)
     loss = (1.0 - lambda_dssim) * l1_value + lambda_dssim * (1.0 - ssim_value)
     return loss, l1_value, ssim_value
+
+
+def verify_checkpoint_payload(model_params: Any, loaded_iter: Any, expected_iter: int) -> bool:
+    """Validate a loaded `(gaussians.capture(), iteration)` checkpoint payload.
+
+    Supports both capture schemas:
+    - MockGaussianModel (simulation): dict containing key "xyz".
+    - GaussianModel (real): tuple/list with >= 12 entries, `_xyz` at index 1 not None.
+    """
+    if loaded_iter != expected_iter:
+        return False
+    if isinstance(model_params, dict):
+        return model_params.get("xyz") is not None
+    if isinstance(model_params, (tuple, list)):
+        return len(model_params) >= 12 and model_params[1] is not None
+    return False
+
+
+def write_json_atomic(path: str, payload: Dict[str, Any]) -> None:
+    """Write JSON to a temp file in the same directory, then os.replace() onto `path`."""
+    tmp_path = f"{path}.tmp_{uuid.uuid4().hex[:8]}"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
 
 
 def training(
@@ -267,6 +300,78 @@ def training(
         if getattr(dataset, "white_background", False) and first_iter >= opt.densify_from_iter and last_opacity_reset_iteration < opt.densify_from_iter:
             last_opacity_reset_iteration = opt.densify_from_iter
 
+    session_start_time = _PROCESS_START_TIME
+    current_pid = os.getpid()
+
+    # Resolve stop_file_path for session
+    stop_file_path = getattr(opt, "stop_file", None)
+    if stop_file_path is None and dataset.model_path:
+        stop_file_path = os.path.join(dataset.model_path, "stop.flag")
+
+    # Safe session initialization (Phase 5.5 Hardening):
+    # 1. Clean up orphaned temporary checkpoints (.tmp) from prior aborted runs
+    save_dir = dataset.model_path
+    if save_dir and os.path.isdir(save_dir):
+        for tmp_pth in Path(save_dir).glob("chkpnt*.tmp*"):
+            try:
+                tmp_pth.unlink()
+                print(f"[ZeroGS] Cleaned up orphaned temporary checkpoint: {tmp_pth.name}")
+            except Exception as e:
+                print(f"[ZeroGS] Warning: Failed to delete orphaned tmp checkpoint {tmp_pth.name}: {e}")
+
+        # Archive a cooperative_shutdown.json left by a previous session so it is never
+        # mistaken for the outcome of this session (evidence preserved, not deleted).
+        stale_manifest = os.path.join(save_dir, "cooperative_shutdown.json")
+        if os.path.exists(stale_manifest):
+            archived = os.path.join(
+                save_dir, f"cooperative_shutdown.stale_{datetime.now().strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex[:6]}.json"
+            )
+            try:
+                os.replace(stale_manifest, archived)
+                print(f"[ZeroGS] Archived stale cooperative shutdown manifest to: {archived}")
+            except Exception as e:
+                print(f"[ZeroGS] Warning: Failed to archive stale cooperative_shutdown.json: {e}")
+
+    # 2. Check for stale stop.flag vs legitimate startup stop request
+    if stop_file_path and os.path.exists(stop_file_path):
+        is_stale = False
+        stale_reason = ""
+        try:
+            flag_stat = os.stat(stop_file_path)
+            with open(stop_file_path, "r", encoding="utf-8") as sf:
+                content = sf.read().strip()
+
+            target_pid = None
+            if content:
+                try:
+                    data = json.loads(content)
+                    target_pid = data.get("target_pid")
+                except Exception:
+                    target_pid = None
+
+            if target_pid is not None:
+                if target_pid != current_pid:
+                    is_stale = True
+                    stale_reason = f"target_pid {target_pid} != current PID {current_pid}"
+            else:
+                # If no target_pid specified, check creation timestamp vs current session start
+                if flag_stat.st_mtime < session_start_time - 1.0:
+                    is_stale = True
+                    stale_reason = f"file mtime ({flag_stat.st_mtime:.1f}) is older than session start ({session_start_time:.1f})"
+        except Exception as e:
+            is_stale = True
+            stale_reason = f"unreadable or corrupted ({e})"
+
+        if is_stale:
+            try:
+                os.remove(stop_file_path)
+                print(f"[ZeroGS] Removed stale stop flag ({stale_reason}): {stop_file_path}")
+            except Exception as e:
+                print(f"[ZeroGS] Warning: Failed to remove stale stop flag: {e}")
+        else:
+            print(f"[ZeroGS] Verified legitimate pending stop request at startup targeting PID {current_pid}")
+
+    cooperative_stopped = False
     for iteration in range(first_iter, opt.iterations + 1):
         if not is_simulation and network_gui.conn is not None:
             try:
@@ -950,24 +1055,132 @@ def training(
                     os.makedirs(save_dir, exist_ok=True)
                     torch.save((gaussians.capture(), iteration), os.path.join(save_dir, f"chkpnt{iteration}.pth"))
 
-    if opt.iterations not in saving_iterations:
-        print(f"\n[ZeroGS] Saving final model at iteration {opt.iterations}")
-        if scene is not None:
-            scene.save(opt.iterations)
-        elif hasattr(gaussians, "save_ply") and dataset.model_path:
-            pc_path = os.path.join(dataset.model_path, f"point_cloud/iteration_{opt.iterations}")
-            os.makedirs(pc_path, exist_ok=True)
-            gaussians.save_ply(os.path.join(pc_path, "point_cloud.ply"))
+            # --- COOPERATIVE SHUTDOWN AT ITERATION BOUNDARY ---
+            if stop_file_path and os.path.exists(stop_file_path):
+                stop_reason = "STOP_REQUEST_DETECTED"
+                should_stop = False
+                try:
+                    with open(stop_file_path, "r", encoding="utf-8") as sf:
+                        content = sf.read().strip()
+                        if content:
+                            try:
+                                stop_info = json.loads(content)
+                                stop_reason = stop_info.get("reason", content)
+                                target_pid = stop_info.get("target_pid")
+                                if target_pid is None or target_pid == current_pid:
+                                    should_stop = True
+                                else:
+                                    # Target PID belongs to a different process - ignore stale request
+                                    should_stop = False
+                            except Exception:
+                                stop_reason = content
+                                should_stop = True
+                        else:
+                            should_stop = True
+                except Exception:
+                    should_stop = True
 
-    print("\n[ZeroGS] Training completed successfully.")
-    print(f"[ZeroGS] Telemetry: {admission_ctrl.get_telemetry()}")
-    if telemetry_writer is not None:
-        telemetry_writer.write(
-            "training_end",
-            final_gaussians=int(gaussians.get_xyz.shape[0]),
-            admission=admission_ctrl.get_telemetry(),
-            memory=capture_cuda_memory().to_dict(),
-        )
+                if should_stop:
+                    print(f"\n" + "=" * 70)
+                    print(f"[ZeroGS] Cooperative shutdown requested at iteration {iteration}!")
+                    print(f"[ZeroGS] Reason: {stop_reason}")
+                    print("=" * 70)
+
+                    save_dir = scene.model_path if scene is not None else dataset.model_path
+                    stop_chkpnt_path = None
+                    stop_chkpnt_size = 0
+                    chkpnt_verified = False
+                    if save_dir and hasattr(gaussians, "capture"):
+                        os.makedirs(save_dir, exist_ok=True)
+                        stop_chkpnt_path = os.path.join(save_dir, f"chkpnt_stop_{iteration}.pth")
+                        tmp_uuid = uuid.uuid4().hex[:8]
+                        tmp_chkpnt_path = os.path.join(save_dir, f"chkpnt_stop_{iteration}.pth.tmp_{tmp_uuid}")
+
+                        # 1. Atomic write to temporary file
+                        torch.save((gaussians.capture(), iteration), tmp_chkpnt_path)
+
+                        # 2. Atomic rename only after write completes and file is non-empty
+                        if os.path.exists(tmp_chkpnt_path) and os.path.getsize(tmp_chkpnt_path) > 0:
+                            os.replace(tmp_chkpnt_path, stop_chkpnt_path)
+                            stop_chkpnt_size = os.path.getsize(stop_chkpnt_path)
+                            print(f"[ZeroGS] Saved cooperative shutdown checkpoint atomically: {stop_chkpnt_path} ({stop_chkpnt_size:,} bytes)")
+
+                            # 3. In-process loadability and integrity verification
+                            try:
+                                loaded_data, loaded_iter = torch.load(stop_chkpnt_path, map_location="cpu", weights_only=False)
+                                if verify_checkpoint_payload(loaded_data, loaded_iter, iteration):
+                                    chkpnt_verified = True
+                                    print(f"[ZeroGS] Verified emergency checkpoint integrity and loadability (iteration {loaded_iter}).")
+                                else:
+                                    print(f"[ZeroGS WARNING] Checkpoint loaded but content validation failed.")
+                            except Exception as e:
+                                print(f"[ZeroGS ERROR] Emergency checkpoint load verification failed: {e}")
+                        else:
+                            print(f"[ZeroGS ERROR] Failed to write temporary checkpoint {tmp_chkpnt_path}")
+
+                    if telemetry_writer is not None:
+                        telemetry_writer.write(
+                            "cooperative_shutdown",
+                            iteration=iteration,
+                            stop_reason=stop_reason,
+                            final_gaussians=int(gaussians.get_xyz.shape[0]),
+                            checkpoint_path=stop_chkpnt_path,
+                            checkpoint_size_bytes=stop_chkpnt_size,
+                            checkpoint_verified=chkpnt_verified,
+                        )
+
+                    manifest_path = os.path.join(save_dir, "cooperative_shutdown.json") if save_dir else None
+                    if manifest_path:
+                        manifest = {
+                            "status": "COOPERATIVE_SHUTDOWN_COMPLETED",
+                            "final_iteration": iteration,
+                            "stop_reason": stop_reason,
+                            "checkpoint_path": stop_chkpnt_path,
+                            "checkpoint_size_bytes": stop_chkpnt_size,
+                            "checkpoint_verified": chkpnt_verified,
+                            "final_gaussians": int(gaussians.get_xyz.shape[0]),
+                            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                            "telemetry_flushed": True
+                        }
+                        write_json_atomic(manifest_path, manifest)
+                        print(f"[ZeroGS] Cooperative shutdown manifest written to: {manifest_path}")
+
+                    # Clean up stop.flag upon successful shutdown
+                    try:
+                        if os.path.exists(stop_file_path):
+                            os.remove(stop_file_path)
+                    except Exception:
+                        pass
+
+                    cooperative_stopped = True
+                    break
+
+    if not cooperative_stopped:
+        if opt.iterations not in saving_iterations:
+            print(f"\n[ZeroGS] Saving final model at iteration {opt.iterations}")
+            if scene is not None:
+                scene.save(opt.iterations)
+            elif hasattr(gaussians, "save_ply") and dataset.model_path:
+                pc_path = os.path.join(dataset.model_path, f"point_cloud/iteration_{opt.iterations}")
+                os.makedirs(pc_path, exist_ok=True)
+                gaussians.save_ply(os.path.join(pc_path, "point_cloud.ply"))
+
+        print("\n[ZeroGS] Training completed successfully.")
+        print(f"[ZeroGS] Telemetry: {admission_ctrl.get_telemetry()}")
+        if telemetry_writer is not None:
+            telemetry_writer.write(
+                "training_end",
+                final_gaussians=int(gaussians.get_xyz.shape[0]),
+                admission=admission_ctrl.get_telemetry(),
+                memory=capture_cuda_memory().to_dict(),
+            )
+    else:
+        print(f"\n[ZeroGS] Training cleanly terminated via cooperative shutdown at iteration {iteration}.")
+
+    return {
+        "status": "cooperative_shutdown" if cooperative_stopped else "completed",
+        "final_iteration": iteration if cooperative_stopped else opt.iterations,
+    }
 
 
 def build_parser():
@@ -1031,6 +1244,7 @@ def build_parser():
     parser.add_argument("--experiment_method", type=str, default="ZeroGS")
     parser.add_argument("--experiment_scene", type=str, default=None)
     parser.add_argument("--num_init_points", type=int, default=5000)
+    parser.add_argument("--stop_file", type=str, default=None, help="Path to stop flag file for cooperative shutdown")
 
     return parser, lp, op, pp
 
@@ -1063,6 +1277,7 @@ if __name__ == "__main__":
     opt_args.simulation_mode = args.simulation_mode
     opt_args.num_init_points = args.num_init_points
     opt_args.telemetry_jsonl = args.telemetry_jsonl
+    opt_args.stop_file = args.stop_file
     opt_args.cost_calibration = args.cost_calibration
     opt_args.inflow_mode = args.inflow_mode
     opt_args.inflow_cap_min = args.inflow_cap_min
@@ -1124,8 +1339,9 @@ if __name__ == "__main__":
         with open(status_path, "w", encoding="utf-8") as status_file:
             json.dump({"run_id": run_id, "status": "running", "oom": False}, status_file, indent=2)
 
+    training_result = None
     try:
-        training(
+        training_result = training(
             dataset=dataset_args,
             opt=opt_args,
             pipe=pipe_args,
@@ -1156,5 +1372,9 @@ if __name__ == "__main__":
         raise
     else:
         if status_path:
+            final_status = {"run_id": run_id, "status": "completed", "oom": False}
+            if isinstance(training_result, dict) and training_result.get("status") == "cooperative_shutdown":
+                final_status["status"] = "cooperative_shutdown"
+                final_status["final_iteration"] = training_result.get("final_iteration")
             with open(status_path, "w", encoding="utf-8") as status_file:
-                json.dump({"run_id": run_id, "status": "completed", "oom": False}, status_file, indent=2)
+                json.dump(final_status, status_file, indent=2)

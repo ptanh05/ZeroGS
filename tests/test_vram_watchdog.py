@@ -24,6 +24,7 @@ from pathlib import Path
 
 
 PYTHON_EXE = sys.executable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 WATCHDOG_SCRIPT = str(Path(__file__).resolve().parent.parent / "scripts" / "vram_watchdog.py")
 
 
@@ -115,9 +116,15 @@ time.sleep(15)
             self.assertEqual(data["status"], "BUDGET_BREACH_INTERCEPTED")
             self.assertEqual(data["first_observed_iteration"], 600)
             self.assertGreater(data["observed_compound_footprint_mb"], 4096.0)
-            self.assertEqual(data["termination_signal"], "SIGTERM")
-            self.assertTrue(data["graceful_termination"])
-            print("[PASS] Test 2: Violation detected at iteration 600 and terminated via SIGTERM.")
+            if sys.platform == "win32":
+                self.assertEqual(data["termination_signal"], "TerminateProcess")
+                self.assertFalse(data["graceful_termination"], "On Windows, TerminateProcess is non-graceful")
+                self.assertIn("abrupt", data.get("windows_safety_limitation", "").lower())
+            else:
+                self.assertEqual(data["termination_signal"], "SIGTERM")
+                self.assertTrue(data["graceful_termination"])
+            self.assertTrue(data.get("telemetry_flushed", False), "Telemetry should be flushed")
+            print(f"[PASS] Test 2: Violation detected at iteration 600 and terminated via {data['termination_signal']}.")
         finally:
             if proc.poll() is None:
                 proc.kill()
@@ -264,6 +271,148 @@ with open(r"{self.telemetry_file}", "w") as f:
         self.assertIn("[WATCHDOG ERROR] Target PID", wd_res.stdout)
         self.assertIn("is not running or invalid", wd_res.stdout)
         print("[PASS] Test 6: Invalid PID detected immediately with code 1.")
+
+    def test_07_checkpoint_and_telemetry_integrity(self):
+        """Test 7: Verify checkpoint archive validity and telemetry flush verification."""
+        print("\n--- Running Test 7: Checkpoint and Telemetry Integrity Verification ---")
+        import zipfile
+        from scripts.vram_watchdog import verify_checkpoints_integrity, verify_telemetry_flushed
+
+        test_dir = Path(self.test_dir)
+        valid_cp = test_dir / "chkpnt1000.pth"
+        corrupt_cp = test_dir / "chkpnt2000.pth"
+        zero_byte_cp = test_dir / "chkpnt3000.pth"
+
+        # 1. Create a valid mock PyTorch checkpoint (valid zip archive)
+        with zipfile.ZipFile(str(valid_cp), "w") as zf:
+            zf.writestr("archive/data.pkl", b"mock_pytorch_tensor_data_payload_bytes")
+
+        # 2. Create a corrupted zip
+        with open(corrupt_cp, "wb") as f:
+            f.write(b"PK\x03\x04corrupted_header_data_not_a_valid_zip_archive")
+
+        # 3. Create a 0-byte file (truncated write)
+        with open(zero_byte_cp, "wb") as f:
+            pass
+
+        report = verify_checkpoints_integrity(test_dir)
+        self.assertEqual(report["count"], 3)
+        self.assertFalse(report["all_valid"])
+
+        cp_by_name = {c["filename"]: c for c in report["checkpoints"]}
+        self.assertTrue(cp_by_name["chkpnt1000.pth"]["valid"])
+        self.assertEqual(cp_by_name["chkpnt1000.pth"]["status"], "OK")
+
+        self.assertFalse(cp_by_name["chkpnt2000.pth"]["valid"])
+        self.assertFalse(cp_by_name["chkpnt3000.pth"]["valid"])
+        self.assertEqual(cp_by_name["chkpnt3000.pth"]["status"], "ZERO_BYTES")
+
+        # Test telemetry flush verification
+        with open(self.telemetry_file, "w", encoding="utf-8") as f:
+            f.write('{"event": "mutation", "iter": 500}\n')
+        flushed, msg = verify_telemetry_flushed(self.telemetry_file)
+        self.assertTrue(flushed)
+        self.assertEqual(msg, "TELEMETRY_FLUSHED_VALID")
+
+        # Truncated telemetry line without newline
+        with open(self.telemetry_file, "a", encoding="utf-8") as f:
+            f.write('{"event": "unfin')
+        flushed_corrupt, msg_corrupt = verify_telemetry_flushed(self.telemetry_file)
+        self.assertFalse(flushed_corrupt)
+        print("[PASS] Test 7: Checkpoint archive integrity and telemetry flush status verified.")
+
+    def test_08_verify_telemetry_flushed_long_line_over_4096_bytes(self):
+        """Test 8 (Regression MINOR-6): verify_telemetry_flushed handles JSONL lines > 4096 bytes."""
+        print("\n--- Running Test 8: Long JSONL Line (>4096 bytes) Telemetry Verification ---")
+        from scripts.vram_watchdog import verify_telemetry_flushed
+
+        long_payload = "x" * 16000
+        with open(self.telemetry_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"event": "start", "iteration": 0}) + "\n")
+            f.write(json.dumps({"event": "mutation_cycle", "iteration": 100, "blob": long_payload}) + "\n")
+
+        flushed, msg = verify_telemetry_flushed(self.telemetry_file)
+        self.assertTrue(flushed, f"Expected TELEMETRY_FLUSHED_VALID for >16KB last line, got: {msg}")
+        self.assertEqual(msg, "TELEMETRY_FLUSHED_VALID")
+
+        # Truncated >4KB line must still be rejected as corrupt
+        with open(self.telemetry_file, "a", encoding="utf-8") as f:
+            f.write('{"event": "partial", "blob": "' + ("y" * 6000))
+        flushed_bad, msg_bad = verify_telemetry_flushed(self.telemetry_file)
+        self.assertFalse(flushed_bad)
+        self.assertIn("TELEMETRY_CORRUPT", msg_bad)
+        print("[PASS] Test 8: Telemetry verification handles >16KB lines cleanly.")
+
+    def test_09_atomic_stop_flag_and_physical_gpu_limit_cooperative_first(self):
+        """Test 9 (Regression MINOR-3 & MINOR-7): Atomic stop.flag write + physical GPU breach tries cooperative stop first."""
+        print("\n--- Running Test 9: Atomic stop.flag & Physical GPU Cooperative-First ---")
+        from unittest.mock import patch
+        from scripts.vram_watchdog import write_json_atomic, main as watchdog_main
+
+        stop_flag = Path(self.test_dir) / "stop.flag"
+        write_json_atomic(stop_flag, {"reason": "TEST_ATOMIC", "target_pid": 42})
+        self.assertTrue(stop_flag.exists())
+        self.assertEqual(list(Path(self.test_dir).glob("stop.flag.tmp_*")), [])
+        with open(stop_flag, "r", encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["target_pid"], 42)
+        stop_flag.unlink()
+
+        # Subprocess watches stop.flag and exits cooperatively with exit code 0
+        coop_code = f"""
+import time, json
+from pathlib import Path
+with open(r"{self.telemetry_file}", "w") as f:
+    f.write(json.dumps({{"event": "training_start"}}) + "\\n")
+    f.flush()
+stop_path = Path(r"{stop_flag}")
+for _ in range(100):
+    if stop_path.exists():
+        with open(r"{self.telemetry_file}", "a") as f:
+            f.write(json.dumps({{"event": "cooperative_shutdown"}}) + "\\n")
+            f.flush()
+        break
+    time.sleep(0.05)
+"""
+        proc = subprocess.Popen([PYTHON_EXE, "-c", coop_code])
+        try:
+            for _ in range(50):
+                if self.telemetry_file.exists():
+                    break
+                time.sleep(0.05)
+
+            argv_sim = [
+                "vram_watchdog.py",
+                "--pid", str(proc.pid),
+                "--telemetry_path", str(self.telemetry_file),
+                "--stop_file", str(stop_flag),
+                "--limit_mb", "8192.0",
+                "--physical_gpu_limit_mb", "4096.0",
+                "--poll_interval", "0.1",
+                "--cooperative_timeout", "5.0",
+                "--output_log", str(self.intercept_file),
+            ]
+            with patch("sys.argv", argv_sim), \
+                 patch("scripts.vram_watchdog.find_nvidia_smi", return_value="mock-smi"), \
+                 patch("scripts.vram_watchdog.query_physical_gpu_memory", return_value=(6000.0, 8151.0)):
+                with self.assertRaises(SystemExit) as cm:
+                    watchdog_main()
+                self.assertEqual(cm.exception.code, 0)
+
+            proc.wait(timeout=5)
+            self.assertEqual(proc.returncode, 0)
+            self.assertTrue(self.intercept_file.exists())
+            self.assertEqual(list(Path(self.test_dir).glob("stop.flag.tmp_*")), [])
+            with open(self.intercept_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(data["status"], "PHYSICAL_GPU_LIMIT_BREACHED")
+            self.assertEqual(data["termination_signal"], "COOPERATIVE_STOP")
+            self.assertTrue(data["graceful"])
+            self.assertTrue(data["graceful_termination"])
+            self.assertTrue(data["telemetry_flushed"])
+            print("[PASS] Test 9: Atomic stop.flag & physical GPU limit cooperative shutdown verified.")
+        finally:
+            if proc.poll() is None:
+                proc.kill()
 
 
 if __name__ == "__main__":
